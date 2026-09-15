@@ -1,0 +1,130 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Data Pipeline Freshness Monitor - MVP.
+  Read-only against Step Functions/S3; writes only to its own DynamoDB table.
+  No VPC (avoids NAT Gateway cost), no always-on compute.
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    Description: Deployment stage, used for tagging/naming only.
+
+Globals:
+  Function:
+    # Matches the Python 3.11 interpreter available locally for `sam build`
+    # (no Docker required); also a runtime already in wide use in this account.
+    Runtime: python3.11
+    Timeout: 60
+    MemorySize: 256
+    Tags:
+      project: pipeline-freshness-monitor
+      stage: !Ref Stage
+
+Resources:
+  PipelineStatusTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: pipeline-freshness-status
+      BillingMode: PAY_PER_REQUEST # on-demand: no idle capacity cost at MVP scale
+      AttributeDefinitions:
+        - AttributeName: pipeline_name
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pipeline_name
+          KeyType: HASH
+      SSESpecification:
+        SSEEnabled: true
+
+  MonitorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: pipeline-freshness-monitor
+      CodeUri: ./
+      Handler: src.handler.lambda_handler
+      Description: Collects Step Functions/S3 state and writes computed freshness status to DynamoDB.
+      Environment:
+        Variables:
+          STATUS_TABLE_NAME: !Ref PipelineStatusTable
+      Events:
+        Schedule:
+          Type: Schedule
+          Properties:
+            Name: pipeline-freshness-monitor-schedule
+            Description: Runs the freshness monitor every 15 minutes.
+            Schedule: rate(15 minutes)
+            Enabled: true
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - Statement:
+            - Sid: ReadRegisteredStepFunctions
+              Effect: Allow
+              Action:
+                - states:ListExecutions
+              Resource:
+                # Least privilege: only the state machines currently in
+                # config/registry.yaml. Add a new ARN here when a pipeline is
+                # registered - this policy is intentionally not wildcarded
+                # across all Step Functions in the account.
+                - arn:aws:states:us-east-1:382625484581:stateMachine:athena_data_export
+                - arn:aws:states:us-east-1:382625484581:stateMachine:syco_unload_and_hourly_refresh
+            - Sid: ReadRegisteredStepFunctionExecutions
+              Effect: Allow
+              Action:
+                - states:DescribeExecution
+              Resource:
+                - arn:aws:states:us-east-1:382625484581:execution:athena_data_export:*
+                - arn:aws:states:us-east-1:382625484581:execution:syco_unload_and_hourly_refresh:*
+            - Sid: ReadRegisteredOutputObjects
+              Effect: Allow
+              Action:
+                - s3:GetObject
+              Resource:
+                # Least privilege: exact registered output key(s) only, not the bucket.
+                - arn:aws:s3:::athiva-leadgen-bucket/vip_queue/Customer_details.csv
+            - Sid: WriteOwnStatusTable
+              Effect: Allow
+              Action:
+                - dynamodb:PutItem
+              Resource: !GetAtt PipelineStatusTable.Arn
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: pipeline-freshness-api
+      CodeUri: ./
+      Handler: src.api_handler.lambda_handler
+      Description: Read-only HTTP API serving computed freshness status for the dashboard.
+      Environment:
+        Variables:
+          STATUS_TABLE_NAME: !Ref PipelineStatusTable
+      Events:
+        GetStatusList:
+          Type: HttpApi
+          Properties:
+            Path: /status
+            Method: GET
+        GetStatusDetail:
+          Type: HttpApi
+          Properties:
+            Path: /status/{name}
+            Method: GET
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - Statement:
+            - Sid: ReadOwnStatusTable
+              Effect: Allow
+              Action:
+                - dynamodb:Scan
+                - dynamodb:GetItem
+              Resource: !GetAtt PipelineStatusTable.Arn
+
+Outputs:
+  StatusTableName:
+    Value: !Ref PipelineStatusTable
+  DashboardApiUrl:
+    Description: Base URL for the read-only status API (append /status)
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+  MonitorFunctionName:
+    Value: !Ref MonitorFunction

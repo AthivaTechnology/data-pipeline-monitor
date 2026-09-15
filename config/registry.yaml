@@ -1,0 +1,78 @@
+# Pipeline registry - manually curated. Do NOT auto-discover state machines here;
+# only list resources that are confirmed to be data pipelines.
+#
+# Each pipeline's schedule/output was verified against live AWS state where possible
+# (see README "Pilot pipelines" section). Fields marked UNVERIFIED could not be
+# confirmed from EventBridge rules, EventBridge Scheduler, or execution history and
+# must be filled in / corrected by the pipeline owner.
+
+pipelines:
+  - name: athena_data_export
+    state_machine_arn: "arn:aws:states:us-east-1:382625484581:stateMachine:athena_data_export"
+    region: us-east-1
+    environment: prod
+    monitoring_enabled: true
+    # First real alertable pipeline (Phase 6) - has a verified schedule and a
+    # verified S3 output, so a FAILED/DELAYED/STALE reading here means something.
+    alerting_enabled: true
+    schedule:
+      type: daily
+      # Verified 2026-09-14 against EventBridge rule "call-routing-export-scheduler"
+      # (ENABLED) and 3 days of matching execution history.
+      cron_utc: "46 16 * * ? *"
+    grace_period_minutes: 60
+    output:
+      type: s3
+      bucket: athiva-leadgen-bucket
+      key: vip_queue/Customer_details.csv
+      # Note: this state machine is a shared export runner - each daily trigger fans
+      # out into multiple executions (one per SQL export). This registry entry only
+      # tracks the "vip_customer" export's flat output file. The dated/partitioned
+      # path (data_export/vip/daily_snapshot/year=/month=/day=) is not checked in
+      # the MVP because it requires partition-walking, not a single HeadObject.
+
+  - name: syco_unload_and_hourly_refresh
+    state_machine_arn: "arn:aws:states:us-east-1:382625484581:stateMachine:syco_unload_and_hourly_refresh"
+    region: us-east-1
+    environment: prod
+    monitoring_enabled: true # keep monitoring it - never_run is a real, useful signal
+    # Do NOT alert for this pipeline yet: ownership and intended trigger are
+    # still unconfirmed (see investigation notes below). Flip to true only
+    # after the owner confirms it should actually be running.
+    alerting_enabled: false
+    schedule:
+      # Re-investigated 2026-09-14. Despite the "hourly" in the resource name,
+      # its own ASL definition Comment reads: "Combined Step Function: Part-1
+      # every 20 mins, Part-2 every 15 mins, avoid Athena conflict" - and the
+      # definition has internal self-throttling logic built for being invoked
+      # more often than every 20 minutes. custom/15min matches that comment;
+      # it is still UNVERIFIED against any real trigger or execution - see notes.
+      type: custom
+      interval_minutes: 15
+      cron_utc: null
+    grace_period_minutes: 30 # placeholder - confirm with owner
+    output: null # true output is a QuickSight dataset ingestion, not S3 - see notes
+    # INVESTIGATION NOTES (2026-09-14):
+    # - Zero executions ever (list_executions AND CloudTrail both confirm -
+    #   not even a failed/attempted StartExecution has ever been recorded).
+    # - No EventBridge rule and no EventBridge Scheduler schedule targets this
+    #   state machine anywhere in the account (checked all 20 Scheduler
+    #   schedules + all classic rules individually).
+    # - IAM role (StepFunctions-syco_unload_and_hourly_refresh-role-spomzjrmm)
+    #   has the auto-generated policy pattern the Step Functions console
+    #   creates for a real, saved workflow (XRayAccessPolicy-*,
+    #   LambdaInvokeScopedAccessPolicy-*) - this looks like a genuine pipeline
+    #   that was built and deployed but never actually connected to a trigger,
+    #   not a test/throwaway resource.
+    # - Real output is `quicksight:createIngestion` on DataSetId
+    #   e4de1394-0f2c-44b9-8ffd-e995e0b29cf1 (INCREMENTAL_REFRESH), with an
+    #   intermediate S3 write to a per-table dynamic path
+    #   (s3://aws-athena-query-results-us-east-1-382625484581/result/syco_dataset/{tableName}/)
+    #   whose {tableName} only exists in execution input - unresolvable with
+    #   zero executions. This MVP's data-freshness checker only supports S3;
+    #   QuickSight ingestion freshness would need `quicksight:DescribeIngestion`,
+    #   which is out of scope for now.
+    # - ACTION NEEDED: confirm with the pipeline owner (1) the real intended
+    #   trigger/cadence, (2) whether it should be running at all, before this
+    #   pipeline is included in any alerting (Phase 6). Until then its
+    #   "never_run" status is accurate and expected, not a monitor bug.

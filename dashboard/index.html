@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Data Reliability Platform</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div class="navbar">
+  <div class="brand">Data <span>Reliability</span> Platform</div>
+  <nav>
+    <a class="nav-link" data-nav="home" href="#/">Home</a>
+    <a class="nav-link" data-nav="pipeline-monitor" href="#/pipeline-monitor">Pipeline Monitor</a>
+    <a class="nav-link" data-nav="lineage" href="#/lineage">Lineage &amp; Catalog</a>
+    <a class="nav-link" data-nav="settings" href="#/settings/monitoring">Settings</a>
+  </nav>
+</div>
+
+<div id="app" class="page"></div>
+
+<!-- Classic scripts on purpose (no type="module") - this file is opened
+     directly via file://, and module imports are blocked under file://.
+     Load order matters: app.js defines Utils/Api/Views/router before the
+     view files below register themselves onto Views. -->
+<script src="app.js"></script>
+<script src="views/home.js"></script>
+<script src="views/pipelineMonitor.js"></script>
+<script src="views/pipelineDetail.js"></script>
+<script src="views/lineage.js"></script>
+<script src="views/catalog.js"></script>
+<script src="views/resourceDetail.js"></script>
+<script src="views/settingsMonitoring.js"></script>
+<script>router();</script>
+</body>
+</html>
