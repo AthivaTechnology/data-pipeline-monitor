@@ -1,0 +1,60 @@
+name: Test and Deploy
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install -r requirements-dev.txt
+
+      - run: pytest -q
+
+  deploy:
+    name: Deploy
+    needs: test
+    # Only deploy on an actual push to master - never on a pull request,
+    # and never before tests pass.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # required for AWS OIDC (no long-lived AWS keys stored in GitHub)
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: aws-actions/setup-sam@v2
+
+      # AWS_DEPLOY_ROLE_ARN is a repo variable (Settings > Secrets and
+      # variables > Actions > Variables), not a secret - the role ARN itself
+      # isn't sensitive, only the trust policy restricting who can assume it
+      # matters. This variable must be set (to the deploy role's ARN) before
+      # this step will succeed - AWS-side OIDC role setup is a separate step,
+      # not yet done as of this workflow's creation.
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - run: sam build
+
+      - run: sam deploy --no-confirm-changeset --no-fail-on-empty-changeset

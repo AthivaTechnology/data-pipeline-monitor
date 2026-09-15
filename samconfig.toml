@@ -3,7 +3,10 @@ version = 0.1
 [default.deploy.parameters]
 stack_name = "pipeline-freshness-monitor"
 region = "us-east-1"
-profile = "haripriya.p"
+# No hardcoded profile: locally, set $env:AWS_PROFILE = "haripriya.p" (or
+# equivalent) before running sam deploy; in CI, credentials come from the
+# OIDC-assumed role via aws-actions/configure-aws-credentials. A hardcoded
+# profile here would break CI, since that named profile doesn't exist there.
 capabilities = "CAPABILITY_IAM"
 resolve_s3 = true
 confirm_changeset = false
