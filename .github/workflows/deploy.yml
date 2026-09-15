@@ -28,9 +28,11 @@ jobs:
   deploy:
     name: Deploy
     needs: test
-    # Only deploy on an actual push to master - never on a pull request,
-    # and never before tests pass.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    # Deploy on an actual push to master, or a manual re-run against master -
+    # never on a pull request, and never before tests pass. GitHub's OIDC
+    # token `sub` claim has the same ref:refs/heads/master format for both
+    # event types, so the trust policy doesn't need to change for this.
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     permissions:
       id-token: write # required for AWS OIDC (no long-lived AWS keys stored in GitHub)
