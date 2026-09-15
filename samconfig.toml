@@ -8,7 +8,14 @@ region = "us-east-1"
 # OIDC-assumed role via aws-actions/configure-aws-credentials. A hardcoded
 # profile here would break CI, since that named profile doesn't exist there.
 capabilities = "CAPABILITY_IAM"
-resolve_s3 = true
+# Explicit bucket instead of resolve_s3 = true: resolve_s3 makes SAM check/
+# manage its own separate "aws-sam-cli-managed-default" bootstrap stack,
+# which the CI deploy role deliberately has no access to (it's not part of
+# this project). This bucket already exists (created once, long ago, by
+# that bootstrap stack) and the deploy role has scoped S3 permissions on it
+# directly - no CloudFormation access to the bootstrap stack needed.
+s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-c3lvncrb2ehm"
+s3_prefix = "pipeline-freshness-monitor"
 confirm_changeset = false
 fail_on_empty_changeset = false
 parameter_overrides = "Stage=dev"
