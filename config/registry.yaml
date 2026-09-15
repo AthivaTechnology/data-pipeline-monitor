@@ -1,10 +1,24 @@
 # Pipeline registry - manually curated. Do NOT auto-discover state machines here;
-# only list resources that are confirmed to be data pipelines.
+# only list resources confirmed to be actual data pipelines via concrete evidence
+# (CloudFormation stack membership, consistent comment/resources, execution history)
+# - never by guessing from a resource's name alone.
 #
-# Each pipeline's schedule/output was verified against live AWS state where possible
-# (see README "Pilot pipelines" section). Fields marked UNVERIFIED could not be
-# confirmed from EventBridge rules, EventBridge Scheduler, or execution history and
-# must be filled in / corrected by the pipeline owner.
+# review_status:
+#   confirmed      - verified as a real data pipeline; safe to monitor.
+#   pending_review - NOT currently used by the loader. Pipelines still under
+#                    investigation are intentionally kept OUT of this file
+#                    entirely (rather than half-registered) until confirmed -
+#                    see the 2026-09-16 discovery report for the current
+#                    PENDING_REVIEW list: gmail_load_job, rds_export_history,
+#                    transcript_categorize, lhg-dev-dynamodb-export-s3,
+#                    V3-lhg-dynamodb-export-s3.
+#
+# grace_period_minutes rule (explicit, not guessed):
+#   - Verified simple daily cron  -> 60 minutes (matches athena_data_export precedent)
+#   - Verified simple hourly cron -> 15 minutes
+#   - Anything else (monthly, bounded-hours, annual, or no trigger at all) ->
+#     left as `null` ("requires configuration") rather than inventing a number.
+#     The freshness engine reports UNKNOWN for these, never FAILED/STALE.
 
 pipelines:
   - name: athena_data_export
@@ -15,6 +29,7 @@ pipelines:
     # First real alertable pipeline (Phase 6) - has a verified schedule and a
     # verified S3 output, so a FAILED/DELAYED/STALE reading here means something.
     alerting_enabled: true
+    review_status: confirmed
     schedule:
       type: daily
       # Verified 2026-09-14 against EventBridge rule "call-routing-export-scheduler"
@@ -40,6 +55,7 @@ pipelines:
     # still unconfirmed (see investigation notes below). Flip to true only
     # after the owner confirms it should actually be running.
     alerting_enabled: false
+    review_status: confirmed
     schedule:
       # Re-investigated 2026-09-14. Despite the "hourly" in the resource name,
       # its own ASL definition Comment reads: "Combined Step Function: Part-1
@@ -76,3 +92,190 @@ pipelines:
     #   trigger/cadence, (2) whether it should be running at all, before this
     #   pipeline is included in any alerting (Phase 6). Until then its
     #   "never_run" status is accurate and expected, not a monitor bug.
+
+  # --- Added 2026-09-16, from the full-account discovery pass ---
+  # All 8 below share the same evidence class: CloudFormation stack membership
+  # (a real, intentional deployment, not a console experiment) confirmed via
+  # `stepfunctions:list-tags-for-resource`. None have any Owner/Team/Contact
+  # tag anywhere (state machine, IAM role, or Lambda tags were all checked).
+  # alerting_enabled is false for all of them per the discovery review: every
+  # one has at least one of unknown ownership, unverified output, or zero
+  # executions, which is an explicit no-alert condition.
+
+  - name: pulse_data_load
+    state_machine_arn: "arn:aws:states:us-east-1:382625484581:stateMachine:pulse_data_load"
+    region: us-east-1
+    environment: prod
+    monitoring_enabled: true
+    alerting_enabled: false
+    review_status: confirmed
+    schedule:
+      type: daily
+      # Verified via EventBridge rule "pulse-batch-trigger" (ENABLED).
+      cron_utc: "30 10 * * ? *"
+    grace_period_minutes: 60
+    output: null
+    # CONFIRMED BROKEN as of 2026-09-15: every recent execution (checked 5+
+    # consecutive days) fails with ConnectTimeoutError trying to reach
+    # athena.us-west-2.amazonaws.com - a wrong-region Athena client bug in the
+    # shared Lambda code. It never reaches the point of writing output, so no
+    # S3 key has ever been observed to configure here - not omitted by mistake.
+    # CloudFormation stack: data-exporter (logical id: PulseStateMachine).
+
+  - name: audit_load_batch
+    state_machine_arn: "arn:aws:states:us-east-1:382625484581:stateMachine:audit_load_batch"
+    region: us-east-1
+    environment: prod
+    monitoring_enabled: true
+    alerting_enabled: false
+    review_status: confirmed
+    schedule:
+      type: custom
+      # Verified via EventBridge rule "athena-audit-monthly-trigger" (ENABLED,
+      # cron(0 0 1 * ? *) = 1st of every month, 00:00 UTC). Monthly isn't a
+      # first-class schedule type here, so this is approximated as a 30-day
+      # interval (43200 min) - an explicit approximation, not a precise fact.
+      cron_utc: "0 0 1 * ? *"
+      interval_minutes: 43200
+    grace_period_minutes: null # monthly cadence isn't covered by the grace-period rule - requires configuration
+    output: null
+    # CONFIRMED BROKEN as of 2026-09-15: same root cause as pulse_data_load -
+    # ConnectTimeoutError to athena.us-west-2.amazonaws.com. Failed on all 3
+    # of its last 3 monthly runs (Jul/Aug/Sep). Never reaches output.
+    # CloudFormation stack: data-exporter (logical id: AuditBatchStateMachine).
+    # Note: its own definition Comment is identical to ansible_data_load's
+    # ("transform and load Audit dataset") - likely copy-pasted; not fully trusted.
+
+  - name: v2-lhg-dynamodb-export-s3
+    state_machine_arn: "arn:aws:states:us-east-1:382625484581:stateMachine:v2-lhg-dynamodb-export-s3"
+    region: us-east-1
+    environment: prod
+    monitoring_enabled: true
+    alerting_enabled: false
+    review_status: confirmed
+    schedule:
+      type: hourly
+      # Verified via two EventBridge rules, both ENABLED, both cron(0 * ? * * *):
+      # "V2LibertyCallsHistoryEvents" and "V2LibertySessionsEvents".
+      cron_utc: "0 * ? * * *"
+    grace_period_minutes: 15
+    output: null
+    # PARTIALLY BROKEN as of 2026-09-15: this ARN handles two logical exports
+    # via its two hourly triggers. The calls_history_v2 export succeeds every
+    # hour with a verified S3 destination (bucket athiva-leadgen-bucket,
+    # prefixes liberty-calls-history-table-export / athena-calls-data-v2) -
+    # but no single fixed object key was observed (only prefixes), so the
+    # MVP's single-HeadObject checker can't be configured for it without
+    # inventing a key. The sessions_v2 export fails every hour with
+    # TableNotFoundException - that DynamoDB table no longer exists.
+    # CloudFormation stack: version2-athiva-leadgen-dynamodb-export-s3.
+    # Known limitation shared with athena_data_export: since two logical
+    # exports share one ARN, "most recent execution wins" means the reported
+    # execution_status depends on which of the two ran last within the hour.
+
+  - name: connect_lake_load_batch
+    state_machine_arn: "arn:aws:states:us-east-1:382625484581:stateMachine:connect_lake_load_batch"
+    region: us-east-1
+    environment: prod
+    monitoring_enabled: true
+    alerting_enabled: false
+    review_status: confirmed
+    schedule:
+      type: daily
+      # Verified via EventBridge rule "connect-lake-batch-trigger" - the cron
+      # itself is real, but the rule is currently DISABLED, so this pipeline
+      # is not actually running on this (or any) cadence right now.
+      cron_utc: "30 3 * * ? *"
+    grace_period_minutes: 60
+    output: null
+    # Zero executions ever. Trigger exists but disabled - confirm with owner
+    # whether this is intentionally paused or abandoned before enabling it.
+    # CloudFormation stack: data-exporter (logical id: ConnectLakeBatchStateMachine).
+
+  - name: ansible_data_load
+    state_machine_arn: "arn:aws:states:us-east-1:382625484581:stateMachine:ansible_data_load"
+    region: us-east-1
+    environment: prod
+    monitoring_enabled: true
+    alerting_enabled: false
+    review_status: confirmed
+    schedule:
+      type: custom
+      # Verified via EventBridge rule "ansible-hourly-trigger" (DISABLED),
+      # cron(0/20 6,9-23 * * ? *) = every 20 min, but only between 6am-23pm
+      # UTC. The 20-minute repeat interval is real and recorded below, but
+      # the bounded-hours part isn't representable in this schema - freshness
+      # math would be imprecise (expecting a run at 2am) if grace period were
+      # set, so grace period is deliberately left unconfigured instead.
+      cron_utc: "0/20 6,9-23 * * ? *"
+      interval_minutes: 20
+    grace_period_minutes: null # bounded-hours schedule not covered by the grace-period rule - requires configuration
+    output: null
+    # Zero executions ever. Trigger exists but disabled.
+    # CloudFormation stack: data-exporter (logical id: AnsibleStateMachine).
+    # Note: its own definition Comment is identical to audit_load_batch's -
+    # likely copy-pasted; not fully trusted as a purpose description.
+
+  - name: twilio_data_extract
+    state_machine_arn: "arn:aws:states:us-east-1:382625484581:stateMachine:twilio_data_extract"
+    region: us-east-1
+    environment: prod
+    monitoring_enabled: true
+    alerting_enabled: false
+    review_status: confirmed
+    schedule:
+      type: custom
+      # EventBridge rule "trigger_twilio_job" is ENABLED with
+      # cron(0 0 1 1 ? *) = once per YEAR (Jan 1 only). This is real and
+      # verified, but almost certainly a misconfigured placeholder rather
+      # than a deliberate annual cadence (nothing else in this account runs
+      # yearly). Recording the raw cron for reference without treating it as
+      # a trustworthy interval - interval_minutes and grace period are left
+      # unconfigured rather than encoding a number we don't actually believe.
+      cron_utc: "0 0 1 1 ? *"
+      interval_minutes: null
+    grace_period_minutes: null # schedule authenticity in doubt - requires owner confirmation before configuring
+    output: null
+    # Zero executions ever.
+    # CloudFormation stack: tp-apps-data (logical id: TwilioExtractStateMachine).
+    # Note: its own definition Comment says "transform and load Pulse dataset" -
+    # a copy-paste error, not a real description of this pipeline.
+
+  - name: ringcentral_transcribe_job
+    state_machine_arn: "arn:aws:states:us-east-1:382625484581:stateMachine:ringcentral_transcribe_job"
+    region: us-east-1
+    environment: prod
+    monitoring_enabled: true
+    alerting_enabled: false
+    review_status: confirmed
+    schedule:
+      type: daily
+      # Verified via EventBridge rule "trigger_transcribe_job" (DISABLED).
+      cron_utc: "0 1 * * ? *"
+    grace_period_minutes: 60
+    output: null
+    # Zero executions ever. Trigger exists but disabled.
+    # CloudFormation stack: tp-apps-data (logical id: RingCentralStateMachine).
+
+  - name: syco_incremental_export
+    state_machine_arn: "arn:aws:states:us-east-1:382625484581:stateMachine:syco_incremental_export"
+    region: us-east-1
+    environment: prod
+    monitoring_enabled: true
+    alerting_enabled: false
+    review_status: confirmed
+    schedule:
+      type: custom
+      # Verified via EventBridge rule "syco-export-scheduler" (DISABLED),
+      # cron(0,40 * * * ? *) = fires at :00 and :40 each hour - an irregular
+      # 20/40-minute alternating gap, not a clean interval. Recording the raw
+      # cron without approximating a single interval_minutes value we can't
+      # honestly justify.
+      cron_utc: "0,40 * * * ? *"
+      interval_minutes: null
+    grace_period_minutes: null # irregular alternating-gap schedule - requires configuration
+    output: null
+    # Zero executions ever. Trigger exists but disabled. Shares the "syco"
+    # naming with syco_unload_and_hourly_refresh - clarify with owner whether
+    # these are related or duplicate efforts.
+    # CloudFormation stack: rds-snapshot-exporter (logical id: SYCOExportStateMachine).

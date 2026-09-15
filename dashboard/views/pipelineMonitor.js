@@ -130,8 +130,8 @@
     const rows = pipelines.map((p) => `
       <tr class="clickable" onclick="location.hash='#/pipeline-monitor/${encodeURIComponent(p.pipeline_name)}'">
         <td>
-          <div class="pname">${Utils.escapeHtml(p.pipeline_name)}</div>
-          <div class="psub">${Utils.dash(p.owner)}</div>
+          <div class="pname">${Utils.escapeHtml(p.pipeline_name)} ${p.review_status && p.review_status !== "confirmed" ? '<span class="badge badge-delayed">Pending Review</span>' : ""}</div>
+          <div class="psub">${Utils.notAssigned(p.owner)}</div>
         </td>
         <td>${Utils.dash(p.environment)}</td>
         <td>${Utils.badge(p.execution_status, EXEC_META)}<div class="reason">${p.execution_reason || ""}</div></td>

@@ -149,6 +149,19 @@ def test_custom_without_interval_is_unknown():
     assert "schedule configuration" in result.reason
 
 
+def test_unset_grace_period_is_unknown_not_stale():
+    """A pipeline with a verified schedule but no grace-period rule applied
+    yet (e.g. a monthly/bounded-hours/irregular cron) must report UNKNOWN,
+    never STALE or FAILED - grace_period_minutes=None means "not configured",
+    not "zero tolerance"."""
+    success = _execution(ExecutionStatus.SUCCEEDED, minutes_ago=10)
+    pipeline = _pipeline(schedule_type="daily", grace_period_minutes=None)
+    state = _state(pipeline, latest_execution=success, latest_success=success)
+    result = evaluate_freshness(state, NOW)
+    assert result.status == FreshnessStatus.UNKNOWN
+    assert "grace period" in result.reason
+
+
 def test_full_lifecycle_fresh_failed_recovered():
     """Simulates three consecutive monitor runs against the same pipeline:
     healthy -> fails -> a new execution succeeds. The engine is stateless

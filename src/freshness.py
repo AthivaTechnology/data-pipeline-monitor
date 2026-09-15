@@ -134,6 +134,20 @@ def evaluate_freshness(state: PipelineExecutionState, now: datetime) -> Freshnes
             last_successful_execution=state.latest_successful_execution,
         )
 
+    if pipeline.grace_period_minutes is None:
+        return FreshnessResult(
+            pipeline_name=pipeline.name,
+            status=FreshnessStatus.UNKNOWN,
+            reason=(
+                "grace period is not yet configured for this pipeline "
+                "(schedule is verified but too irregular for the current default rule); "
+                "cannot compute freshness"
+            ),
+            computed_at=now,
+            last_execution=latest,
+            last_successful_execution=state.latest_successful_execution,
+        )
+
     reference_time = latest.stop_date or latest.start_date
     elapsed = now - reference_time
     grace = timedelta(minutes=pipeline.grace_period_minutes)

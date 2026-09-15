@@ -42,10 +42,19 @@ class PipelineConfig:
     environment: str
     monitoring_enabled: bool  # should the monitor collect/evaluate this pipeline at all
     alerting_enabled: bool  # should Slack alerts (Phase 6) ever fire for this pipeline
-    owner: str
+    owner: Optional[str]
     schedule: ScheduleConfig
-    grace_period_minutes: int
+    # None means "verified as real, but no grace-period rule applies yet" (e.g. an
+    # irregular/bounded/monthly cron) - deliberately distinct from inventing a number.
+    # The freshness engine reports UNKNOWN, not FAILED/STALE, when this is None.
+    grace_period_minutes: Optional[int]
     output: Optional[OutputConfig]
+    # "confirmed": verified as a real data pipeline via concrete evidence (CFN stack
+    # membership, consistent comment/resources, etc). "pending_review": not currently
+    # supported by the loader (see registry.py) - pending-review pipelines are kept out
+    # of config/registry.yaml entirely until confirmed, rather than half-registered.
+    review_status: str = "confirmed"
+    contact: Optional[str] = None  # e.g. a Slack channel or email; None means genuinely unassigned
 
 
 @dataclass(frozen=True)

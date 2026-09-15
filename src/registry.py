@@ -43,8 +43,13 @@ def load_registry(path: Path = DEFAULT_REGISTRY_PATH) -> List[PipelineConfig]:
                 alerting_enabled=entry.get("alerting_enabled", False),
                 owner=entry.get("owner"),  # None (not a "TBD" string) when unknown
                 schedule=schedule,
-                grace_period_minutes=entry["grace_period_minutes"],
+                # None (not a required key) when a schedule is verified but too
+                # irregular/uncommon (monthly, bounded-hours, annual) for the
+                # current grace-period rule to apply - see registry.yaml comments.
+                grace_period_minutes=entry.get("grace_period_minutes"),
                 output=output,
+                review_status=entry.get("review_status", "confirmed"),
+                contact=entry.get("contact"),  # None (not a placeholder string) when unassigned
             )
         )
     return pipelines

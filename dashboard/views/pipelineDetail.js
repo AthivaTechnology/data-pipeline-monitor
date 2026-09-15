@@ -37,9 +37,11 @@
         <div class="kv-grid">
           <div><div class="k">Environment</div><div class="v">${Utils.dash(p.environment)}</div></div>
           <div><div class="k">Region</div><div class="v">${Utils.dash(p.region)}</div></div>
-          <div><div class="k">Owner</div><div class="v">${Utils.dash(p.owner)}</div></div>
+          <div><div class="k">Owner</div><div class="v">${Utils.notAssigned(p.owner)}</div></div>
+          <div><div class="k">Contact</div><div class="v">${Utils.notAssigned(p.contact)}</div></div>
           <div><div class="k">Monitoring</div><div class="v">Enabled</div></div>
           <div><div class="k">Alerting</div><div class="v">${p.alerting_enabled ? "Enabled" : "Disabled"}</div></div>
+          <div><div class="k">Review Status</div><div class="v">${Utils.reviewStatusLabel(p)}</div></div>
           <div><div class="k">Configured Schedule</div><div class="v">${Utils.scheduleLabel(p)}</div></div>
           <div><div class="k">Grace Period</div><div class="v">${Utils.gracePeriodLabel(p)}</div></div>
         </div>

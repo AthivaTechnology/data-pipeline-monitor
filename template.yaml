@@ -69,6 +69,14 @@ Resources:
                 # across all Step Functions in the account.
                 - arn:aws:states:us-east-1:382625484581:stateMachine:athena_data_export
                 - arn:aws:states:us-east-1:382625484581:stateMachine:syco_unload_and_hourly_refresh
+                - arn:aws:states:us-east-1:382625484581:stateMachine:pulse_data_load
+                - arn:aws:states:us-east-1:382625484581:stateMachine:audit_load_batch
+                - arn:aws:states:us-east-1:382625484581:stateMachine:v2-lhg-dynamodb-export-s3
+                - arn:aws:states:us-east-1:382625484581:stateMachine:connect_lake_load_batch
+                - arn:aws:states:us-east-1:382625484581:stateMachine:ansible_data_load
+                - arn:aws:states:us-east-1:382625484581:stateMachine:twilio_data_extract
+                - arn:aws:states:us-east-1:382625484581:stateMachine:ringcentral_transcribe_job
+                - arn:aws:states:us-east-1:382625484581:stateMachine:syco_incremental_export
             - Sid: ReadRegisteredStepFunctionExecutions
               Effect: Allow
               Action:
@@ -76,6 +84,14 @@ Resources:
               Resource:
                 - arn:aws:states:us-east-1:382625484581:execution:athena_data_export:*
                 - arn:aws:states:us-east-1:382625484581:execution:syco_unload_and_hourly_refresh:*
+                - arn:aws:states:us-east-1:382625484581:execution:pulse_data_load:*
+                - arn:aws:states:us-east-1:382625484581:execution:audit_load_batch:*
+                - arn:aws:states:us-east-1:382625484581:execution:v2-lhg-dynamodb-export-s3:*
+                - arn:aws:states:us-east-1:382625484581:execution:connect_lake_load_batch:*
+                - arn:aws:states:us-east-1:382625484581:execution:ansible_data_load:*
+                - arn:aws:states:us-east-1:382625484581:execution:twilio_data_extract:*
+                - arn:aws:states:us-east-1:382625484581:execution:ringcentral_transcribe_job:*
+                - arn:aws:states:us-east-1:382625484581:execution:syco_incremental_export:*
             - Sid: ReadRegisteredOutputObjects
               Effect: Allow
               Action:

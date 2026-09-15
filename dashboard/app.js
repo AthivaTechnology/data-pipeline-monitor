@@ -42,6 +42,10 @@ const SUMMARY_LABELS = {
 const Utils = {
   dash(v) { return (v === null || v === undefined || v === "") ? "—" : v; },
 
+  // Distinct from dash(): owner/contact are a human-curation gap, not just
+  // "data missing" - said explicitly so it reads as an actionable state.
+  notAssigned(v) { return (v === null || v === undefined || v === "") ? "Not assigned" : v; },
+
   fmtTime(ts) {
     if (!ts) return "—";
     const d = new Date(ts);
@@ -100,14 +104,28 @@ const Utils = {
   },
 
   scheduleLabel(p) {
-    if (p.schedule_type === "custom") return `Custom — every ${Utils.dash(p.schedule_interval_minutes)} minutes`;
+    if (p.schedule_type === "custom") {
+      if (p.schedule_interval_minutes != null) return `Custom — every ${p.schedule_interval_minutes} minutes`;
+      // A verified cron can exist even when we didn't derive a trustworthy
+      // interval from it (irregular, bounded-hours, or likely-misconfigured
+      // schedules) - show the raw fact instead of a fabricated number.
+      return p.schedule_cron_utc
+        ? `Custom — requires configuration (raw cron: ${p.schedule_cron_utc} UTC)`
+        : "Custom — requires configuration";
+    }
     if (p.schedule_type === "hourly") return "Hourly";
     if (p.schedule_type === "daily") return `Daily${p.schedule_cron_utc ? ` (cron: ${p.schedule_cron_utc} UTC)` : ""}`;
     return Utils.dash(p.schedule_type);
   },
 
   gracePeriodLabel(p) {
-    return p.grace_period_minutes != null ? `${p.grace_period_minutes} minutes` : "—";
+    return p.grace_period_minutes != null ? `${p.grace_period_minutes} minutes` : "Requires configuration";
+  },
+
+  reviewStatusLabel(p) {
+    if (p.review_status === "confirmed") return "Confirmed";
+    if (p.review_status === "pending_review") return "Pending Review";
+    return Utils.dash(p.review_status);
   },
 };
 
