@@ -60,3 +60,18 @@ jobs:
       - run: sam build
 
       - run: sam deploy --no-confirm-changeset --no-fail-on-empty-changeset
+
+      # Publish the dashboard: static files live in the repo, not in the SAM
+      # build, so they're synced to S3 directly and CloudFront's cache is
+      # invalidated so viewers see the new version immediately.
+      - name: Sync dashboard to S3
+        run: |
+          BUCKET=$(aws cloudformation describe-stacks --stack-name pipeline-freshness-monitor \
+            --query "Stacks[0].Outputs[?OutputKey=='DashboardBucketName'].OutputValue" --output text)
+          aws s3 sync dashboard/ "s3://$BUCKET/" --delete
+
+      - name: Invalidate CloudFront cache
+        run: |
+          DIST_ID=$(aws cloudformation describe-stacks --stack-name pipeline-freshness-monitor \
+            --query "Stacks[0].Outputs[?OutputKey=='DashboardDistributionId'].OutputValue" --output text)
+          aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths "/*"

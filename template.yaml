@@ -10,6 +10,13 @@ Parameters:
     Type: String
     Default: dev
     Description: Deployment stage, used for tagging/naming only.
+  DashboardCertificateArn:
+    Type: String
+    Default: "arn:aws:acm:us-east-1:382625484581:certificate/f3eeb996-dd26-4a41-ab38-2224a1e9f6f2"
+    Description: >
+      ACM cert (us-east-1, required for CloudFront) for datapipeline.athivaone.com.
+      Issued and DNS-validated once, manually, against the existing athivaone.com
+      Route53 zone - not something this stack creates itself each deploy.
 
 Globals:
   Function:
@@ -136,6 +143,89 @@ Resources:
                 - dynamodb:GetItem
               Resource: !GetAtt PipelineStatusTable.Arn
 
+  # ---- Dashboard hosting: S3 (private) + CloudFront (public, HTTPS, custom domain) ----
+  # The dashboard is plain static HTML/JS/CSS, hash-routed (#/pipeline-monitor/...) -
+  # every real HTTP request is for an actual file (/, /app.js, /views/x.js, ...),
+  # so no SPA-fallback/rewrite rule is needed here, unlike a path-based router.
+
+  DashboardBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: pipeline-freshness-monitor-dashboard
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  DashboardOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: pipeline-freshness-monitor-dashboard-oac
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  DashboardBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DashboardBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontReadOnly
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${DashboardBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${DashboardDistribution.Id}"
+
+  DashboardDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: pipeline-freshness-monitor dashboard
+        DefaultRootObject: index.html
+        Aliases:
+          - datapipeline.athivaone.com
+        ViewerCertificate:
+          AcmCertificateArn: !Ref DashboardCertificateArn
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+        Origins:
+          - Id: DashboardS3Origin
+            DomainName: !GetAtt DashboardBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt DashboardOriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+        DefaultCacheBehavior:
+          TargetOriginId: DashboardS3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          CachedMethods: [GET, HEAD]
+          # AWS managed "CachingOptimized" policy - no custom cache config needed.
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+
+  DashboardDnsRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: Z0188898X51DLEN9N60F # existing athivaone.com zone
+      Name: datapipeline.athivaone.com
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt DashboardDistribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2 # CloudFront's fixed global hosted zone ID (same for every distribution)
+        EvaluateTargetHealth: false
+
 Outputs:
   StatusTableName:
     Value: !Ref PipelineStatusTable
@@ -144,3 +234,9 @@ Outputs:
     Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
   MonitorFunctionName:
     Value: !Ref MonitorFunction
+  DashboardBucketName:
+    Value: !Ref DashboardBucket
+  DashboardDistributionId:
+    Value: !Ref DashboardDistribution
+  DashboardUrl:
+    Value: "https://datapipeline.athivaone.com"
