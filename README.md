@@ -7,8 +7,8 @@ against AWS: it never starts, stops, or modifies any pipeline or trigger.
 ## Architecture
 
 ```
-EventBridge (rate(15 minutes))
-  -> MonitorFunction (Lambda)
+EventBridge (rate(15 minutes), no Input)
+  -> MonitorFunction (Lambda) -- default mode: freshness monitoring
        -> Step Functions API: list_state_machines (discovery - the single
           source of truth for which pipelines exist and get processed)
        -> config/registry.yaml (optional, per-ARN metadata override - see below)
@@ -17,8 +17,8 @@ EventBridge (rate(15 minutes))
        -> S3 API (optional, only when a registry override configures an output)
        -> DynamoDB (PipelineStatusTable)
 
-EventBridge (rate(1 day))
-  -> LineageFunction (Lambda)
+EventBridge (rate(1 day), Input: {"mode": "lineage"})
+  -> MonitorFunction (Lambda) -- same function, lineage mode
        -> Step Functions API: list_state_machines (same discovery call, reused)
        -> Step Functions API: describe_state_machine (the ASL definition)
        -> lineage_scanner (pure logic: walks the definition's real control
@@ -29,6 +29,15 @@ EventBridge (rate(1 day))
   <- dashboard/ (static HTML/JS, hash-routed, opened directly - no server)
 ```
 
+One Lambda (`MonitorFunction`), two EventBridge schedules, mode-dispatched
+at the top of `src/handler.py`'s `lambda_handler` (checked first, returns
+immediately for lineage mode - the freshness-monitoring code below it is
+unaffected by the second schedule existing). Not two Lambdas: lineage
+discovery's AWS calls are a strict subset of what `MonitorFunction` already
+has permission for, so a separate function/role/schedule/log-group would
+only have duplicated infrastructure, not isolated anything a mode-check at
+the top of one function doesn't already isolate just as well.
+
 Every state machine in the account is discovered and monitored automatically,
 with no dependency on `config/registry.yaml` — it's empty by default and the
 application works fully without it. See the comment at the top of that file
@@ -36,8 +45,8 @@ for exactly what it's for (a trusted schedule, an exact output location to
 check, alerting, owner/contact, or excluding a non-pipeline state machine).
 
 No VPC, no NAT Gateway, no always-on compute. Cost at current scale (~30
-state machines, 96 monitor runs/day + 1 lineage run/day) is effectively $0 —
-inside AWS free tier.
+state machines, 96 monitor runs/day + 1 lineage run/day, one Lambda) is
+effectively $0 — inside AWS free tier.
 
 ## Lineage & Catalog
 
@@ -85,16 +94,17 @@ runtime `$.foo` reference) still gets a node - typed correctly, but labeled
 name, and scoped to that exact pipeline+state so it never falsely merges with
 an unrelated unresolved call elsewhere.
 
-### Required IAM (LineageFunction)
+### Required IAM
 
-All read-only; nothing here can create, modify, start, stop, or delete
-anything:
+None beyond what `MonitorFunction` already had before lineage existed - no
+new permissions, no new role, nothing to add. Its existing grants happen to
+be a superset of what lineage discovery needs:
 
 ```
-states:ListStateMachines, states:DescribeStateMachine   (reused from MonitorFunction's permissions)
-events:ListRuleNamesByTarget, events:DescribeRule        (reused)
-scheduler:ListSchedules, scheduler:GetSchedule           (reused)
-dynamodb:PutItem  (scoped to PipelineStatusTable only)
+states:ListStateMachines, states:DescribeStateMachine   (already had - freshness discovery reuses it too)
+events:ListRuleNamesByTarget, events:DescribeRule        (already had - trigger detection reuses it too)
+scheduler:ListSchedules, scheduler:GetSchedule           (already had)
+dynamodb:PutItem  (already had, scoped to PipelineStatusTable only)
 ```
 
 No `lambda:GetFunction`, `firehose:*`, `glue:*`, or `athena:*` permissions

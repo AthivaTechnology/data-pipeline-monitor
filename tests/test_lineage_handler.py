@@ -30,7 +30,7 @@ def test_happy_path_writes_one_lineage_item_per_pipeline_and_a_summary():
          patch.object(lineage_handler, "build_pipeline_graph", return_value=_graph_with_one_edge("pipeline_a", ARN_A)), \
          patch.object(lineage_handler, "put_pipeline_lineage", side_effect=lambda table, item: written_items.append(item)), \
          patch.object(lineage_handler, "put_lineage_summary", side_effect=lambda table, item: written_summaries.append(item)):
-        result = lineage_handler.lambda_handler({}, None)
+        result = lineage_handler.run_lineage_discovery()
 
     assert result == {"total": 1, "succeeded": 1, "failed": 0}
     assert len(written_items) == 1
@@ -55,7 +55,7 @@ def test_excluded_names_are_skipped_entirely():
          patch.object(lineage_handler, "list_all_state_machines", return_value=[_machine("ignore_me", ARN_A)]), \
          patch.object(lineage_handler, "put_pipeline_lineage", side_effect=lambda table, item: written.append(item)), \
          patch.object(lineage_handler, "put_lineage_summary"):
-        result = lineage_handler.lambda_handler({}, None)
+        result = lineage_handler.run_lineage_discovery()
 
     assert result["total"] == 0
     assert written == []
@@ -79,7 +79,7 @@ def test_one_bad_pipeline_does_not_stop_the_others():
          patch.object(lineage_handler, "build_pipeline_graph", side_effect=fake_build_graph), \
          patch.object(lineage_handler, "put_pipeline_lineage", side_effect=lambda table, item: written.append(item)), \
          patch.object(lineage_handler, "put_lineage_summary"):
-        result = lineage_handler.lambda_handler({}, None)
+        result = lineage_handler.run_lineage_discovery()
 
     assert result == {"total": 2, "succeeded": 1, "failed": 1}
     assert len(written) == 1
@@ -89,7 +89,7 @@ def test_one_bad_pipeline_does_not_stop_the_others():
 def test_missing_table_name_raises_clearly():
     with patch.object(lineage_handler, "TABLE_NAME", ""):
         try:
-            lineage_handler.lambda_handler({}, None)
+            lineage_handler.run_lineage_discovery()
             assert False, "expected RuntimeError"
         except RuntimeError as exc:
             assert "STATUS_TABLE_NAME" in str(exc)

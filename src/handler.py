@@ -1,5 +1,20 @@
-"""Lambda entrypoint: discover every Step Function in the account, then
-collect -> evaluate -> persist for each one, in a single unified pass.
+"""Lambda entrypoint for MonitorFunction - the only Lambda in this project
+that does discovery/monitoring work. Two EventBridge schedules point at it
+(see template.yaml):
+
+  rate(15 minutes), no Input  -> freshness-monitoring mode (default, below)
+  rate(1 day), {"mode": "lineage"} -> lineage discovery (see lineage_handler.py)
+
+The mode-dispatch branch at the top of lambda_handler() returns immediately
+for lineage mode, so everything below it - the actual freshness monitor -
+is completely unchanged by that second schedule existing. One Lambda, one
+IAM role, one log group, one DynamoDB table for both: lineage's AWS calls
+are a strict subset of what this function already has permission for, so
+splitting it into a second Lambda would only have duplicated
+infrastructure, not isolated anything meaningfully safer.
+
+Freshness-monitoring mode: discover every Step Function in the account,
+then collect -> evaluate -> persist for each one, in a single unified pass.
 
 Account-wide discovery (list_all_state_machines) is the single source of
 truth for *which* pipelines exist and get processed - never registry.yaml.
@@ -29,6 +44,7 @@ from .collector import collect_pipeline_state
 from .data_freshness import DataFreshnessStatus, evaluate_data_freshness
 from .discovery import describe_state_machine_details, list_all_state_machines
 from .freshness import evaluate_freshness
+from .lineage_handler import run_lineage_discovery
 from .models import ExecutionStatus, PipelineConfig, ScheduleConfig
 from .registry import load_excluded_names, load_registry
 from .resource_scanner import scan_definition_json
@@ -276,6 +292,16 @@ def _process_machine(machine: dict, registry_entry: Optional[PipelineConfig], no
 def lambda_handler(event, context):
     if not TABLE_NAME:
         raise RuntimeError("STATUS_TABLE_NAME environment variable is not set")
+
+    # Mode dispatch: one Lambda, two EventBridge schedules (see
+    # template.yaml). The existing rate(15 minutes) schedule passes no
+    # Input, so `event` is {} and this branch is never taken - the
+    # freshness-monitoring flow below is completely unchanged for it. Only
+    # the new rate(1 day) schedule passes {"mode": "lineage"}, landing here
+    # instead. Checked first and returns immediately, so nothing below this
+    # point ever runs for a lineage-mode invocation.
+    if event.get("mode") == "lineage":
+        return run_lineage_discovery()
 
     now = datetime.now(timezone.utc)
     registry_by_arn = _registry_lookup()

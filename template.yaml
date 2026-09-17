@@ -50,7 +50,10 @@ Resources:
       FunctionName: pipeline-freshness-monitor
       CodeUri: ./
       Handler: src.handler.lambda_handler
-      Description: Collects Step Functions/S3 state and writes computed freshness status to DynamoDB.
+      Description: >
+        Collects Step Functions state and writes freshness status to DynamoDB
+        (every 15 min). Also runs AWS resource lineage discovery once a day,
+        mode-dispatched - see src/handler.py.
       Environment:
         Variables:
           STATUS_TABLE_NAME: !Ref PipelineStatusTable
@@ -62,6 +65,20 @@ Resources:
             Description: Runs the freshness monitor every 15 minutes.
             Schedule: rate(15 minutes)
             Enabled: true
+        LineageSchedule:
+          Type: Schedule
+          Properties:
+            Name: pipeline-lineage-discovery-schedule
+            # A pipeline's structure (which resources it calls) changes far
+            # less often than its execution status - recomputing it every
+            # 15 minutes alongside freshness would be pure waste. Once a day
+            # is enough to pick up new/changed pipelines promptly. The Input
+            # is what handler.py's mode-dispatch branch checks for - this
+            # schedule is the only thing that ever sends it.
+            Description: Runs AWS resource lineage discovery once a day.
+            Schedule: rate(1 day)
+            Enabled: true
+            Input: '{"mode": "lineage"}'
       Policies:
         - AWSLambdaBasicExecutionRole
         - Statement:
@@ -71,17 +88,22 @@ Resources:
                 - dynamodb:PutItem
               Resource: !GetAtt PipelineStatusTable.Arn
             # ---- Account-wide Step Functions discovery + monitoring (read-only) ----
-            # AWS Step Functions is the single source of truth for which
-            # pipelines exist - every state machine in the account is found
-            # and processed through this same set of permissions, so this
-            # cannot be scoped to specific ARNs the way a registry-driven
-            # policy could. Every action here is a List/Describe/Get read -
-            # nothing here can create, modify, start, stop, or delete
-            # anything. (If config/registry.yaml ever registers a pipeline's
-            # `output:` location again, that pipeline's exact S3 object would
-            # need its own s3:GetObject grant added here - none is needed
-            # while the registry is empty, since evaluate_data_freshness
-            # never gets a location to check without one.)
+            # Covers both this function's modes: freshness monitoring and
+            # lineage discovery. AWS Step Functions is the single source of
+            # truth for which pipelines exist - every state machine in the
+            # account is found and processed through this same set of
+            # permissions, so this cannot be scoped to specific ARNs the way
+            # a registry-driven policy could. Every action here is a
+            # List/Describe/Get read - nothing here can create, modify,
+            # start, stop, or delete anything. (If config/registry.yaml ever
+            # registers a pipeline's `output:` location again, that
+            # pipeline's exact S3 object would need its own s3:GetObject
+            # grant added here - none is needed while the registry is empty,
+            # since evaluate_data_freshness never gets a location to check
+            # without one. Lineage discovery needs no Lambda/Firehose/Glue/
+            # Athena API permissions either: every resource it detects is
+            # classified directly from a state machine's own ASL definition,
+            # already readable via DescribeStateMachine below.)
             - Sid: DiscoverAndReadAllStepFunctions
               Effect: Allow
               Action:
@@ -91,64 +113,6 @@ Resources:
                 - states:DescribeExecution
               Resource: "*"
             - Sid: DiscoverTriggersForStepFunctions
-              Effect: Allow
-              Action:
-                - events:ListRuleNamesByTarget
-                - events:DescribeRule
-                - scheduler:ListSchedules
-                - scheduler:GetSchedule
-              Resource: "*"
-
-  LineageFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName: pipeline-lineage-discovery
-      CodeUri: ./
-      Handler: src.lineage_handler.lambda_handler
-      Description: >
-        Discovers AWS resource lineage (nodes/edges) for every Step Function
-        in the account and writes it to PipelineStatusTable under
-        LINEAGE#-prefixed keys - see lineage_store.py. No new table: this
-        reuses the exact same table as MonitorFunction/ApiFunction.
-      Environment:
-        Variables:
-          STATUS_TABLE_NAME: !Ref PipelineStatusTable
-      Events:
-        Schedule:
-          Type: Schedule
-          Properties:
-            Name: pipeline-lineage-discovery-schedule
-            # A pipeline's structure (which resources it calls) changes far
-            # less often than its execution status - recomputing it every
-            # 15 minutes alongside freshness would be pure waste. Once a day
-            # is enough to pick up new/changed pipelines promptly.
-            Description: Runs lineage discovery once a day.
-            Schedule: rate(1 day)
-            Enabled: true
-      Policies:
-        - AWSLambdaBasicExecutionRole
-        - Statement:
-            - Sid: WriteLineageItemsToSharedStatusTable
-              Effect: Allow
-              Action:
-                - dynamodb:PutItem
-              Resource: !GetAtt PipelineStatusTable.Arn
-            # Same read-only, account-wide discovery permissions as
-            # MonitorFunction (states/events/scheduler) - deliberately not
-            # combined into one shared policy/role, so each function's
-            # permissions stay independently auditable against what it
-            # actually does. No Lambda/Firehose/Glue/Athena API permissions
-            # are needed: every resource this scanner detects is classified
-            # directly from the state machine's own ASL definition (already
-            # readable via DescribeStateMachine below), not from a separate
-            # describe call per resource.
-            - Sid: DiscoverStepFunctionsForLineage
-              Effect: Allow
-              Action:
-                - states:ListStateMachines
-                - states:DescribeStateMachine
-              Resource: "*"
-            - Sid: DiscoverTriggersForLineage
               Effect: Allow
               Action:
                 - events:ListRuleNamesByTarget

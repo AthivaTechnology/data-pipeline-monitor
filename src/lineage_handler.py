@@ -1,15 +1,22 @@
-"""Lambda entrypoint: discover AWS resource lineage for every Step Function
-in the account, and persist it to the SAME DynamoDB table the freshness
-monitor uses (see lineage_store.py for why this is safe).
+"""Lineage discovery orchestration - discovers AWS resource lineage for
+every Step Function in the account, and persists it to the SAME DynamoDB
+table the freshness monitor uses (see lineage_store.py for why that's safe).
 
-Deliberately a separate Lambda from handler.py, on its own (much slower)
-schedule: a pipeline's *structure* - which Lambda it calls, what it writes
-to - changes far less often than its execution status, so recomputing
-lineage every 15 minutes alongside freshness would be pure waste. Reuses
-handler.py's exact discovery primitives (list_all_state_machines,
-describe_state_machine_details, detect_trigger) rather than re-implementing
-discovery - this is not a second discovery system, just a second Lambda
-doing different work from the same starting inventory.
+NOT a Lambda entrypoint. `run_lineage_discovery()` is called directly by
+handler.py's lambda_handler when it's invoked in lineage mode (see the
+mode-dispatch branch there) - there is no separate LineageFunction, no
+separate IAM role, no separate schedule. One Lambda (MonitorFunction) with
+two EventBridge schedules: the existing rate(15 minutes) one (no Input,
+normal freshness-monitoring mode) and a new rate(1 day) one that passes
+{"mode": "lineage"}. A pipeline's *structure* - which Lambda it calls, what
+it writes to - changes far less often than its execution status, so
+recomputing lineage every 15 minutes alongside freshness would be pure
+waste; the daily schedule is what keeps this cheap, not a separate function.
+
+Reuses handler.py's exact discovery primitives (list_all_state_machines,
+describe_state_machine_details, detect_trigger) rather than
+re-implementing discovery - this is not a second discovery system, just a
+second code path invoked from the same Lambda.
 
 Read-only against AWS. Writes only to its own lineage items in the shared
 table - never touches a pipeline's status item.
@@ -33,9 +40,11 @@ from .lineage_store import (
 from .registry import load_excluded_names
 from .trigger_scanner import detect_trigger_detail
 
-logging.getLogger().setLevel(logging.INFO)
 logger = logging.getLogger("pipeline_freshness_monitor.lineage_handler")
 
+# Same env vars MonitorFunction's own module reads - correct as independent
+# reads (not values threaded in as parameters) because this always runs
+# inside that same Lambda's environment, whichever mode invoked it.
 TABLE_NAME = os.environ.get("STATUS_TABLE_NAME", "")
 DISCOVERY_REGION = os.environ.get("AWS_REGION", "us-east-1")
 
@@ -64,7 +73,12 @@ def _process_machine(machine: dict, now: datetime) -> dict:
     return item
 
 
-def lambda_handler(event, context):
+def run_lineage_discovery() -> dict:
+    """Called by handler.py's lambda_handler in lineage mode - not invoked
+    directly by AWS. The `if not TABLE_NAME` guard is defense in depth: the
+    caller already checked this before dispatching, but this function stays
+    correct and independently callable/testable even if that ever changes.
+    """
     if not TABLE_NAME:
         raise RuntimeError("STATUS_TABLE_NAME environment variable is not set")
 

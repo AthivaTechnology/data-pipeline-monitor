@@ -167,6 +167,53 @@ def test_missing_table_name_raises_clearly():
             assert "STATUS_TABLE_NAME" in str(exc)
 
 
+# ---------------- Mode dispatch (one Lambda, two EventBridge schedules) ----------------
+
+
+def test_lineage_mode_dispatches_to_run_lineage_discovery_and_skips_monitoring():
+    """The rate(1 day) schedule's {"mode": "lineage"} Input must reach
+    run_lineage_discovery() and return immediately - none of the
+    freshness-monitoring code path (registry lookup, discovery, per-pipeline
+    collection) may run for this event.
+    """
+    sentinel = {"total": 3, "succeeded": 3, "failed": 0}
+    with patch.object(handler, "TABLE_NAME", "test-table"), \
+         patch.object(handler, "run_lineage_discovery", return_value=sentinel) as mock_lineage, \
+         patch.object(handler, "list_all_state_machines") as mock_discovery:
+        result = handler.lambda_handler({"mode": "lineage"}, None)
+
+    assert result is sentinel
+    mock_lineage.assert_called_once_with()
+    mock_discovery.assert_not_called()
+
+
+def test_normal_mode_does_not_dispatch_to_lineage():
+    """The existing rate(15 minutes) schedule passes no Input, so event is
+    {} - `.get("mode")` is None and the freshness-monitoring flow below the
+    dispatch branch must run exactly as before.
+    """
+    with patch.object(handler, "TABLE_NAME", "test-table"), \
+         patch.object(handler, "run_lineage_discovery") as mock_lineage, \
+         patch.object(handler, "load_registry", return_value=[]), \
+         patch.object(handler, "load_excluded_names", return_value=set()), \
+         patch.object(handler, "list_all_state_machines", return_value=[]):
+        result = handler.lambda_handler({}, None)
+
+    mock_lineage.assert_not_called()
+    assert result["total"] == 0
+
+
+def test_missing_table_name_raises_before_lineage_dispatch_too():
+    with patch.object(handler, "TABLE_NAME", ""), \
+         patch.object(handler, "run_lineage_discovery") as mock_lineage:
+        try:
+            handler.lambda_handler({"mode": "lineage"}, None)
+            assert False, "expected RuntimeError"
+        except RuntimeError as exc:
+            assert "STATUS_TABLE_NAME" in str(exc)
+    mock_lineage.assert_not_called()
+
+
 # ---------------- Discovered pipelines (no registry.yaml entry) ----------------
 
 DISCOVERED_ARN = "arn:aws:states:us-east-1:382625484581:stateMachine:mystery_pipeline"
