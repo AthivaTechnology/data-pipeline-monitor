@@ -18,7 +18,7 @@ Views.settingsMonitoring = async function (container) {
           <td class="nowrap">${p.alerting_enabled ? '<span class="badge badge-enabled">Enabled</span>' : '<span class="badge badge-disabled">Disabled</span>'}</td>
           <td class="nowrap">${Utils.reviewStatusLabel(p)}</td>
           <td>${Utils.scheduleLabel(p)} &middot; grace ${Utils.gracePeriodLabel(p)}</td>
-          <td>${p.data_status === "not_configured" ? "Not configured" : Utils.dash(p.data_checked_location)}</td>
+          <td>${p.data_checked_location ? Utils.escapeHtml(p.data_checked_location) : Utils.dash(DATA_META[p.data_status] ? DATA_META[p.data_status].label : null)}</td>
           <td class="nowrap">${Utils.notAssigned(p.owner)}</td>
           <td class="nowrap">${Utils.notAssigned(p.contact)}</td>
         </tr>`).join("");
@@ -31,9 +31,12 @@ Views.settingsMonitoring = async function (container) {
 
     <div class="section" style="margin-bottom:16px">
       <p class="footer-note" style="margin:0">
-        This page is read-only for this phase — editing requires updating <code>config/registry.yaml</code> and redeploying.
-        "Monitoring" always shows Enabled here because the API currently only returns pipelines it actively monitors;
-        a pipeline registered with monitoring disabled would not appear in this list at all rather than showing as disabled.
+        This page is read-only for this phase. Rows marked <strong>Confirmed</strong> come from <code>config/registry.yaml</code> —
+        editing them requires updating that file and redeploying. Rows marked <strong>Needs Review</strong> were found
+        automatically via account-wide Step Functions discovery and have no registry entry yet; add one to give them a
+        schedule, output location, owner, or to exclude them from discovery entirely.
+        "Monitoring" always shows Enabled here because the API only returns pipelines it actively monitors;
+        a registry pipeline with monitoring disabled would not appear in this list at all rather than showing as disabled.
       </p>
     </div>
 

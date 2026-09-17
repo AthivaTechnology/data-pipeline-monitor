@@ -23,6 +23,14 @@ class DataFreshnessStatus(str, Enum):
     STALE = "stale"
     UNKNOWN = "unknown"
     NOT_CONFIGURED = "not_configured"
+    # Only ever set for auto-discovered (non-registry) pipelines, after this
+    # module returns NOT_CONFIGURED - see handler.py's discovery phase, which
+    # refines NOT_CONFIGURED into one of these two based on resource_scanner
+    # results. Kept out of evaluate_data_freshness() itself so registry-driven
+    # pipelines (whose NOT_CONFIGURED always means "no output registered by
+    # design") are completely unaffected.
+    SOURCE_NOT_DETECTED = "source_not_detected"
+    SOURCE_DETECTED_UNAVAILABLE = "source_detected_unavailable"
 
 
 @dataclass(frozen=True)

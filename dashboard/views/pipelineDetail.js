@@ -26,11 +26,18 @@
       <div class="detail-header">
         <h1 style="margin:0 0 2px;font-size:19px">${Utils.escapeHtml(p.pipeline_name)}</h1>
         <div class="arn">${Utils.escapeHtml(p.state_machine_arn)}</div>
+        <p style="margin:4px 0 0"><a href="${consoleUrl(p.state_machine_arn, p.region)}" target="_blank" rel="noopener">Open in AWS Step Functions console &#8599;</a></p>
         <div class="badges">
           ${Utils.badge(p.execution_status, EXEC_META, true)}
           ${Utils.badge(p.data_status, DATA_META, true)}
+          ${p.source === "discovered" ? '<span class="badge badge-unknown badge-lg">Auto-discovered</span>' : ""}
         </div>
       </div>
+
+      ${p.source === "discovered" ? `
+        <div class="section">
+          <p class="footer-note" style="margin:0">${Utils.escapeHtml(p.discovery_reason || "Auto-discovered; not present in config/registry.yaml.")}</p>
+        </div>` : ""}
 
       <div class="section">
         <h3>Configuration</h3>
@@ -44,8 +51,17 @@
           <div><div class="k">Review Status</div><div class="v">${Utils.reviewStatusLabel(p)}</div></div>
           <div><div class="k">Configured Schedule</div><div class="v">${Utils.scheduleLabel(p)}</div></div>
           <div><div class="k">Grace Period</div><div class="v">${Utils.gracePeriodLabel(p)}</div></div>
+          ${p.source === "discovered" ? `<div><div class="k">Detected Trigger</div><div class="v">${Utils.dash(p.detected_trigger)}</div></div>` : ""}
         </div>
       </div>
+
+      ${p.source === "discovered" ? `
+        <div class="section">
+          <h3>Detected Resources</h3>
+          ${(p.detected_resources && p.detected_resources.length > 0)
+            ? `<ul class="roadmap" style="list-style:none;padding:0;margin:0">${p.detected_resources.map((r) => `<li class="item" style="padding:8px 0"><div class="t">${Utils.escapeHtml(r)}</div></li>`).join("")}</ul>`
+            : `<div class="reason-box">No S3, Lambda, DynamoDB, Athena, Glue, Redshift, or RDS references were found in this state machine's definition.</div>`}
+        </div>` : ""}
 
       <div class="section">
         <h3>Execution Health — ${Utils.badge(p.execution_status, EXEC_META)}</h3>
@@ -67,13 +83,13 @@
       <div class="section">
         <h3>Data Freshness — ${Utils.badge(p.data_status, DATA_META)}</h3>
         <div class="reason-box">${Utils.escapeHtml(p.data_reason)}</div>
-        ${p.data_status === "not_configured"
-          ? `<p class="footer-note">No output freshness source is configured for this pipeline.</p>`
-          : `<div class="kv-grid" style="margin-top:12px">
+        ${p.data_checked_location
+          ? `<div class="kv-grid" style="margin-top:12px">
               <div><div class="k">Output Type</div><div class="v">${outputType(p.data_checked_location)}</div></div>
               <div><div class="k">Output Location</div><div class="v">${Utils.dash(p.data_checked_location)}</div></div>
               <div><div class="k">Data Last Modified</div><div class="v">${Utils.fmtTime(p.data_last_modified)}</div></div>
-            </div>`}
+            </div>`
+          : ""}
       </div>
 
       <div class="section">
@@ -83,6 +99,10 @@
       </div>
     `;
   };
+
+  function consoleUrl(arn, region) {
+    return `https://${region}.console.aws.amazon.com/states/home?region=${encodeURIComponent(region)}#/statemachines/view/${encodeURIComponent(arn)}`;
+  }
 
   function outputType(location) {
     if (!location) return "—";

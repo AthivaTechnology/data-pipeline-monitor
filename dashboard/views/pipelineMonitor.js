@@ -19,7 +19,16 @@
     running: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M10 8.5l6 3.5-6 3.5v-7z" fill="currentColor" stroke="none"/></svg>',
     never_run: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>',
     unknown: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4.5"/><circle cx="12" cy="16" r="0.6" fill="currentColor" stroke="none"/></svg>',
+    needs_review: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>',
+    needs_attention: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><circle cx="12" cy="16.3" r="0.6" fill="currentColor" stroke="none"/><path d="M10.3 3.9L2.5 18a1.6 1.6 0 0 0 1.4 2.4h16.2a1.6 1.6 0 0 0 1.4-2.4L13.7 3.9a1.6 1.6 0 0 0-2.8 0z"/></svg>',
   };
+
+  // Data-freshness statuses (see resource_scanner.py / data_freshness.py) that
+  // count toward "Needs Attention" alongside the execution-health ones -
+  // deliberately a separate list from _ATTENTION_EXECUTION_STATUSES below
+  // since these two enums are independent axes.
+  const _ATTENTION_EXECUTION_STATUSES = new Set(["failed", "delayed", "stale"]);
+  const _ATTENTION_DATA_STATUSES = new Set(["stale", "delayed", "source_detected_unavailable"]);
 
   // Hex values matching the CSS custom properties in style.css, needed here
   // because the donut chart's conic-gradient is built as an inline style
@@ -44,6 +53,8 @@
     { key: "running", statusValue: "running", label: "Running", icon: ICONS.running },
     { key: "never_run", statusValue: "never_run", label: "Never Run", icon: ICONS.never_run },
     { key: "unknown", statusValue: "unknown", label: "Configuration Issues", icon: ICONS.unknown },
+    { key: "needs_review", statusValue: "__needs_review__", label: "Needs Review", icon: ICONS.needs_review },
+    { key: "needs_attention", statusValue: "__needs_attention__", label: "Needs Attention", icon: ICONS.needs_attention },
   ];
 
   Views.pipelineMonitor = async function (container) {
@@ -71,6 +82,8 @@
             <select id="pm-status-filter">
               <option value="">All statuses</option>
               ${Object.entries(EXEC_META).map(([k, m]) => `<option value="${k}">${m.label}</option>`).join("")}
+              <option value="__needs_review__">Needs Review</option>
+              <option value="__needs_attention__">Needs Attention</option>
             </select>
             <span class="spacer"></span>
           </div>
@@ -154,11 +167,17 @@
     };
   }
 
+  function isNeedsAttention(p) {
+    return _ATTENTION_EXECUTION_STATUSES.has(p.execution_status) || _ATTENTION_DATA_STATUSES.has(p.data_status);
+  }
+
   function filteredPipelines() {
     const f = getFilters();
     return allPipelines.filter((p) => {
       if (f.search && !p.pipeline_name.toLowerCase().includes(f.search)) return false;
       if (f.env && p.environment !== f.env) return false;
+      if (f.status === "__needs_review__") return p.review_status === "needs_review";
+      if (f.status === "__needs_attention__") return isNeedsAttention(p);
       if (f.status && p.execution_status !== f.status) return false;
       return true;
     });
@@ -192,7 +211,11 @@
     // filtering is a view of the table, not a re-scoping of "the truth".
     const currentStatus = getFilters().status;
     const cards = CARD_DEFS.map((def) => {
-      const count = def.key === "total" ? allPipelines.length : (lastSummary[def.key] || 0);
+      let count;
+      if (def.key === "total") count = allPipelines.length;
+      else if (def.key === "needs_review") count = allPipelines.filter((p) => p.review_status === "needs_review").length;
+      else if (def.key === "needs_attention") count = allPipelines.filter(isNeedsAttention).length;
+      else count = lastSummary[def.key] || 0;
       const isActive = currentStatus === def.statusValue;
       return `
         <div class="card c-${def.key}${isActive ? " active" : ""}" onclick="Views._pipelineMonitorSelectCard('${def.statusValue}')">
@@ -242,7 +265,7 @@
     const rows = pipelines.map((p) => `
       <tr class="clickable${p.execution_status === "failed" ? " row-failed" : ""}" onclick="location.hash='#/pipeline-monitor/${encodeURIComponent(p.pipeline_name)}'">
         <td>
-          <div class="pname">${Utils.escapeHtml(p.pipeline_name)} ${p.review_status && p.review_status !== "confirmed" ? '<span class="badge badge-delayed">Pending Review</span>' : ""}</div>
+          <div class="pname">${Utils.escapeHtml(p.pipeline_name)} ${p.review_status && p.review_status !== "confirmed" ? `<span class="badge ${p.review_status === "needs_review" ? "badge-unknown" : "badge-delayed"}">${Utils.reviewStatusLabel(p)}</span>` : ""}</div>
           <div class="psub">${Utils.notAssigned(p.owner)}</div>
         </td>
         <td class="nowrap">${Utils.envBadge(p.environment)}</td>
@@ -347,8 +370,16 @@
     const neverRun = lastSummary.never_run || 0;
     const failed = lastSummary.failed || 0;
     const configIssues = lastSummary.unknown || 0;
+    const needsReview = allPipelines.filter((p) => p.review_status === "needs_review").length;
     const envs = Array.from(new Set(allPipelines.map((p) => p.environment).filter(Boolean)));
 
+    if (needsReview > 0) {
+      insights.push({
+        icon: ICONS.needs_review,
+        title: `${needsReview} auto-discovered pipeline${needsReview === 1 ? "" : "s"} awaiting review`,
+        desc: "Found via account-wide discovery but not yet in config/registry.yaml.",
+      });
+    }
     if (neverRun > 0) {
       insights.push({ icon: ICONS.never_run, title: `${neverRun} pipeline${neverRun === 1 ? "" : "s"} have never run`, desc: "Check schedules and permissions." });
     }

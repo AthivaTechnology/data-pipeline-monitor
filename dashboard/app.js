@@ -17,11 +17,17 @@ const EXEC_META = {
   unknown:    { label: "Unknown",    cls: "unknown" },
 };
 const DATA_META = {
-  fresh:          { label: "Fresh",          cls: "fresh" },
-  delayed:        { label: "Delayed",        cls: "delayed" },
-  stale:          { label: "Stale",          cls: "stale" },
-  unknown:        { label: "Unknown",        cls: "unknown" },
-  not_configured: { label: "Not Configured", cls: "not_configured" },
+  fresh:                       { label: "Fresh",                cls: "fresh" },
+  delayed:                     { label: "Delayed",               cls: "delayed" },
+  stale:                       { label: "Stale",                 cls: "stale" },
+  unknown:                     { label: "Unknown",                cls: "unknown" },
+  not_configured:               { label: "Not Configured",        cls: "not_configured" },
+  // Auto-discovered pipelines only - see resource_scanner.py. Distinguishes
+  // "nothing found" from "found something, couldn't resolve it", instead of
+  // collapsing both into the same generic "Not Configured" a registry
+  // pipeline shows when its output was deliberately left unconfigured.
+  source_not_detected:          { label: "Output Source Not Detected", cls: "not_configured" },
+  source_detected_unavailable:  { label: "Freshness Unavailable",      cls: "not_configured" },
 };
 const STATUS_EXPLANATIONS = {
   fresh: "Last successful execution completed within the expected interval.",
@@ -31,6 +37,8 @@ const STATUS_EXPLANATIONS = {
   running: "The pipeline is currently executing.",
   never_run: "No executions were found for this state machine.",
   not_configured: "No output freshness source is configured for this pipeline.",
+  source_not_detected: "No recognizable AWS resource references were found in this state machine's definition.",
+  source_detected_unavailable: "Possible output resources were detected, but not resolved to a specific, checkable location.",
   unknown: "The monitor could not reliably determine the status.",
 };
 const SUMMARY_ORDER = ["fresh", "delayed", "failed", "stale", "running", "never_run", "unknown"];
@@ -134,6 +142,11 @@ const Utils = {
   },
 
   scheduleLabel(p) {
+    // Auto-discovered pipelines never have a registry schedule (that's the
+    // whole reason they're auto-discovered) - show what trigger_scanner.py
+    // actually found in the account instead of the registry-oriented
+    // "requires configuration" wording meant for a mis-set registry entry.
+    if (p.source === "discovered") return p.detected_trigger || "Trigger not identified";
     if (p.schedule_type === "custom") {
       if (p.schedule_interval_minutes != null) return `Custom — every ${p.schedule_interval_minutes} minutes`;
       // A verified cron can exist even when we didn't derive a trustworthy
@@ -149,12 +162,14 @@ const Utils = {
   },
 
   gracePeriodLabel(p) {
-    return p.grace_period_minutes != null ? `${p.grace_period_minutes} minutes` : "Requires configuration";
+    if (p.grace_period_minutes != null) return `${p.grace_period_minutes} minutes`;
+    return p.source === "discovered" ? "Not set (auto-discovered)" : "Requires configuration";
   },
 
   reviewStatusLabel(p) {
     if (p.review_status === "confirmed") return "Confirmed";
     if (p.review_status === "pending_review") return "Pending Review";
+    if (p.review_status === "needs_review") return "Needs Review";
     return Utils.dash(p.review_status);
   },
 

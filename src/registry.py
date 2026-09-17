@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
+from typing import List, Set
 
 import yaml
 
@@ -57,3 +57,15 @@ def load_registry(path: Path = DEFAULT_REGISTRY_PATH) -> List[PipelineConfig]:
 
 def load_monitored_registry(path: Path = DEFAULT_REGISTRY_PATH) -> List[PipelineConfig]:
     return [p for p in load_registry(path) if p.monitoring_enabled]
+
+
+def load_excluded_names(path: Path = DEFAULT_REGISTRY_PATH) -> Set[str]:
+    """Optional escape hatch for auto-discovery: state machine names listed
+    under a top-level `excluded:` key in registry.yaml are skipped entirely
+    by the discovery phase (no AWS calls, no DynamoDB item written for them).
+    Absent/empty by default - discovery's default behavior is to surface
+    everything it finds, not to hide it.
+    """
+    with open(path, "r", encoding="utf-8") as f:
+        raw = yaml.safe_load(f)
+    return set(raw.get("excluded") or [])

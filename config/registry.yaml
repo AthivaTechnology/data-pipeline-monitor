@@ -19,6 +19,20 @@
 #   - Anything else (monthly, bounded-hours, annual, or no trigger at all) ->
 #     left as `null` ("requires configuration") rather than inventing a number.
 #     The freshness engine reports UNKNOWN for these, never FAILED/STALE.
+#
+# Auto-discovery (handler.py's discovery phase): every run also calls
+# states:ListStateMachines and writes a lightweight, honest-but-limited status
+# item (review_status: needs_review) for any state machine NOT listed below by
+# ARN - including the 5 PENDING_REVIEW pipelines named above, which will now
+# appear on the dashboard tagged "Needs Review" rather than staying invisible.
+# This is deliberate: "not yet in this file" is no longer the same as "hidden".
+#
+# excluded: (optional, top-level, sibling of `pipelines:` below) - a plain
+# list of state machine names to skip entirely during discovery (no AWS
+# calls, no DynamoDB item written/updated for them). Empty/absent by default.
+# Example:
+# excluded:
+#   - some-internal-test-stub
 
 pipelines:
   - name: athena_data_export

@@ -111,6 +111,29 @@ Resources:
               Action:
                 - dynamodb:PutItem
               Resource: !GetAtt PipelineStatusTable.Arn
+            # ---- Account-wide discovery (read-only) ----
+            # Unlike the statements above, these cannot be scoped to specific
+            # ARNs: discovery's entire purpose is to find state machines that
+            # are NOT in config/registry.yaml, so their ARNs are unknown at
+            # policy-authoring time. Every action here is a List/Describe/Get
+            # read - nothing here can create, modify, start, stop, or delete
+            # anything.
+            - Sid: DiscoverAndReadUnregisteredStepFunctions
+              Effect: Allow
+              Action:
+                - states:ListStateMachines
+                - states:DescribeStateMachine
+                - states:ListExecutions
+                - states:DescribeExecution
+              Resource: "*"
+            - Sid: DiscoverTriggersForUnregisteredStepFunctions
+              Effect: Allow
+              Action:
+                - events:ListRuleNamesByTarget
+                - events:DescribeRule
+                - scheduler:ListSchedules
+                - scheduler:GetSchedule
+              Resource: "*"
 
   ApiFunction:
     Type: AWS::Serverless::Function
