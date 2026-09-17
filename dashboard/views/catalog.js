@@ -4,7 +4,7 @@ Views.catalog = async function (container) {
     ${Utils.pageHeader({
       title: "AWS Resource Catalog",
       subtitle: "Searchable inventory of tracked AWS resources.",
-      metaHtml: `<span class="pill">Not yet available</span>`,
+      metaHtml: `<span class="pill pill-soon">Coming Soon</span>`,
     })}
 
     <div class="controls-row">
@@ -15,7 +15,8 @@ Views.catalog = async function (container) {
       <span class="spacer"></span>
     </div>
 
-    <div class="state-box card-style">
+    <div class="state-box card-style empty-illustration">
+      <span class="empty-icon">${ICONS.network}</span>
       <div class="big">Resource catalog data is not yet collected</div>
       <div>This page will list every tracked AWS resource — name, type, ARN, environment, region, owner/tags, upstream dependencies, downstream consumers — once the lineage discovery module is implemented. The controls above are a preview of the intended layout and are disabled because there is no data behind them yet.</div>
     </div>

@@ -13,14 +13,14 @@ Views.settingsMonitoring = async function (container) {
     : pipelines.map((p) => `
         <tr>
           <td class="pname">${Utils.escapeHtml(p.pipeline_name)}</td>
-          <td>${Utils.dash(p.environment)}</td>
-          <td>Enabled</td>
-          <td>${p.alerting_enabled ? "Enabled" : "Disabled"}</td>
-          <td>${Utils.reviewStatusLabel(p)}</td>
+          <td class="nowrap">${Utils.envBadge(p.environment)}</td>
+          <td class="nowrap"><span class="badge badge-enabled">Enabled</span></td>
+          <td class="nowrap">${p.alerting_enabled ? '<span class="badge badge-enabled">Enabled</span>' : '<span class="badge badge-disabled">Disabled</span>'}</td>
+          <td class="nowrap">${Utils.reviewStatusLabel(p)}</td>
           <td>${Utils.scheduleLabel(p)} &middot; grace ${Utils.gracePeriodLabel(p)}</td>
           <td>${p.data_status === "not_configured" ? "Not configured" : Utils.dash(p.data_checked_location)}</td>
-          <td>${Utils.notAssigned(p.owner)}</td>
-          <td>${Utils.notAssigned(p.contact)}</td>
+          <td class="nowrap">${Utils.notAssigned(p.owner)}</td>
+          <td class="nowrap">${Utils.notAssigned(p.contact)}</td>
         </tr>`).join("");
 
   container.innerHTML = `

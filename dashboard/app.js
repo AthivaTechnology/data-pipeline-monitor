@@ -39,6 +39,36 @@ const SUMMARY_LABELS = {
   running: "Running", never_run: "Never Run", unknown: "Configuration Issues",
 };
 
+// Shared brand mark + a small set of general-purpose icons reused across
+// Home, the navbar, and the Lineage empty state. Plain inline SVG (no icon
+// font/library) - consistent with the rest of this dashboard.
+const BRAND_LOGO = `
+  <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="athivatechLogoGrad" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-color="#6366f1"/>
+        <stop offset="0.55" stop-color="#8b5cf6"/>
+        <stop offset="1" stop-color="#14b8a6"/>
+      </linearGradient>
+    </defs>
+    <rect width="40" height="40" rx="10" fill="url(#athivatechLogoGrad)"/>
+    <path d="M12 24a5 5 0 0 1 1-9.9 6 6 0 0 1 11.4-2A5.5 5.5 0 0 1 27 24H12z" fill="#fff" fill-opacity="0.95"/>
+    <circle cx="14.5" cy="28.5" r="1.3" fill="#fff" fill-opacity="0.85"/>
+    <circle cx="20" cy="29.5" r="1.3" fill="#fff" fill-opacity="0.85"/>
+    <circle cx="25.5" cy="28.5" r="1.3" fill="#fff" fill-opacity="0.85"/>
+  </svg>`;
+
+const ICONS = {
+  shield: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3 8-8 9-5-1-8-4.5-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg>',
+  speed: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 13l3.5-3.5"/><path d="M9 4.5h6"/></svg>',
+  eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>',
+  bulb: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.5.4.8 1 .8 1.6V16h5.4v-.5c0-.6.3-1.2.8-1.6A6 6 0 0 0 12 3z"/></svg>',
+  network: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.6"/><circle cx="18" cy="6" r="2.6"/><circle cx="12" cy="18" r="2.6"/><path d="M8.2 7.3L11 15.5M15.8 7.3L13 15.5M8.6 6h6.8"/></svg>',
+  user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>',
+  chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M12 20V4M20 20v-7"/></svg>',
+  pulse: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-7 4 14 2-7h6"/></svg>',
+};
+
 const Utils = {
   dash(v) { return (v === null || v === undefined || v === "") ? "—" : v; },
 
@@ -126,6 +156,27 @@ const Utils = {
     if (p.review_status === "confirmed") return "Confirmed";
     if (p.review_status === "pending_review") return "Pending Review";
     return Utils.dash(p.review_status);
+  },
+
+  envBadge(env) {
+    if (!env) return "—";
+    return `<span class="badge badge-env">${Utils.escapeHtml(env)}</span>`;
+  },
+
+  // Coarse, human "x ago" phrasing for the Recent Activity list - purely a
+  // display formatter over a real timestamp already in the API response,
+  // never a source of data itself.
+  relativeTime(iso) {
+    if (!iso) return "—";
+    const then = new Date(iso).getTime();
+    if (isNaN(then)) return "—";
+    const diffMin = Math.round((Date.now() - then) / 60000);
+    if (diffMin < 1) return "just now";
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.round(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+    const diffDay = Math.round(diffHr / 24);
+    return `${diffDay}d ago`;
   },
 };
 

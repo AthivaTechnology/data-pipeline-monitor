@@ -21,6 +21,15 @@
     unknown: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4.5"/><circle cx="12" cy="16" r="0.6" fill="currentColor" stroke="none"/></svg>',
   };
 
+  // Hex values matching the CSS custom properties in style.css, needed here
+  // because the donut chart's conic-gradient is built as an inline style
+  // string (CSS var() works fine in most contexts but conic-gradient stop
+  // lists are simplest to compute in JS with concrete colors).
+  const STATUS_HEX = {
+    fresh: "#1a7f37", delayed: "#9a6700", failed: "#cf222e", stale: "#7c3aed",
+    running: "#0969da", never_run: "#57606a", unknown: "#bc4c00",
+  };
+
   // Defines every summary card: which pipelines it represents (a predicate
   // over the already-fetched data, or null for "all") and its display info.
   // Clicking a card sets the existing status-filter <select> to `statusValue`
@@ -52,19 +61,40 @@
           <div class="last-updated" id="pm-last-updated"></div>`,
       })}
 
-      <div class="controls-row">
-        <input type="text" id="pm-search" placeholder="Search pipeline name…" />
-        <select id="pm-env-filter"><option value="">All environments</option></select>
-        <select id="pm-status-filter">
-          <option value="">All statuses</option>
-          ${Object.entries(EXEC_META).map(([k, m]) => `<option value="${k}">${m.label}</option>`).join("")}
-        </select>
-        <span class="spacer"></span>
-      </div>
-
       <div id="pm-summary" class="summary"></div>
-      <div id="pm-active-filter"></div>
-      <div id="pm-table-wrap" class="table-wrap">${Utils.loadingState("Loading pipelines…")}</div>
+
+      <div class="pm-layout">
+        <div class="pm-main">
+          <div class="controls-row">
+            <input type="text" id="pm-search" placeholder="Search pipeline name…" />
+            <select id="pm-env-filter"><option value="">All environments</option></select>
+            <select id="pm-status-filter">
+              <option value="">All statuses</option>
+              ${Object.entries(EXEC_META).map(([k, m]) => `<option value="${k}">${m.label}</option>`).join("")}
+            </select>
+            <span class="spacer"></span>
+          </div>
+
+          <div id="pm-active-filter"></div>
+          <div id="pm-table-wrap" class="table-wrap">${Utils.loadingState("Loading pipelines…")}</div>
+          <p class="footer-note">Click on any status card above to filter pipelines. Use the search and filters to refine your view.</p>
+        </div>
+
+        <div class="pm-side">
+          <div class="side-panel">
+            <h3>Pipeline Status Overview</h3>
+            <div id="pm-donut"></div>
+          </div>
+          <div class="side-panel">
+            <h3>Recent Activity <a href="javascript:void(0)" onclick="Views._pipelineMonitorClearFilters()">View All</a></h3>
+            <div id="pm-activity"></div>
+          </div>
+          <div class="side-panel">
+            <h3>Quick Insights</h3>
+            <div id="pm-insights"></div>
+          </div>
+        </div>
+      </div>
     `;
 
     document.getElementById("pm-refresh-btn").addEventListener("click", () => loadData(true));
@@ -95,6 +125,7 @@
       lastSummary = data.summary;
       populateEnvFilter();
       renderContent();
+      renderSidePanels();
       const lu = document.getElementById("pm-last-updated");
       if (lu) lu.textContent = `Last updated: ${new Date().toLocaleString(undefined, { dateStyle: "medium", timeStyle: "medium" })} (your local time)`;
       countdown = AUTO_REFRESH_SECONDS;
@@ -214,14 +245,14 @@
           <div class="pname">${Utils.escapeHtml(p.pipeline_name)} ${p.review_status && p.review_status !== "confirmed" ? '<span class="badge badge-delayed">Pending Review</span>' : ""}</div>
           <div class="psub">${Utils.notAssigned(p.owner)}</div>
         </td>
-        <td class="nowrap">${Utils.dash(p.environment)}</td>
+        <td class="nowrap">${Utils.envBadge(p.environment)}</td>
         <td>${Utils.badge(p.execution_status, EXEC_META)}<div class="reason">${p.execution_reason || ""}</div></td>
         <td>${Utils.badge(p.data_status, DATA_META)}<div class="reason">${p.data_reason || ""}</div></td>
         <td class="nowrap">${Utils.fmtTime(p.last_successful_execution_at)}</td>
         <td class="nowrap">${Utils.dash(p.last_execution_status)}<div class="psub">${Utils.fmtTime(p.last_execution_at)}</div></td>
         <td class="nowrap">${Utils.fmtTime(p.expected_next_run)}</td>
         <td class="nowrap">${Utils.fmtDuration(p.last_execution_duration_seconds)}</td>
-        <td class="nowrap">${p.alerting_enabled ? "Enabled" : "Disabled"}</td>
+        <td class="nowrap">${p.alerting_enabled ? '<span class="badge badge-enabled">Enabled</span>' : '<span class="badge badge-disabled">Disabled</span>'}</td>
         <td class="nowrap">${Utils.fmtTime(p.last_checked_at)}</td>
         <td class="nowrap"><button class="view-btn" onclick="event.stopPropagation(); location.hash='#/pipeline-monitor/${encodeURIComponent(p.pipeline_name)}'">View</button></td>
       </tr>
@@ -238,6 +269,112 @@
         </thead>
         <tbody>${rows.join("")}</tbody>
       </table>`;
+  }
+
+  // ---------------- Sidebar: all derived from allPipelines/lastSummary,
+  // already sitting in memory - no extra API calls, no invented numbers. ----
+
+  function renderSidePanels() {
+    renderDonut();
+    renderActivity();
+    renderInsights();
+  }
+
+  function renderDonut() {
+    const el = document.getElementById("pm-donut");
+    if (!el) return;
+    const total = allPipelines.length;
+    if (total === 0) {
+      el.innerHTML = `<div class="muted" style="font-size:12.5px">No pipelines yet.</div>`;
+      return;
+    }
+
+    let cursor = 0;
+    const stops = [];
+    const legend = [];
+    for (const key of SUMMARY_ORDER) {
+      const count = lastSummary[key] || 0;
+      if (count === 0) continue;
+      const pct = (count / total) * 100;
+      const color = STATUS_HEX[key];
+      stops.push(`${color} ${cursor}% ${cursor + pct}%`);
+      legend.push(`
+        <div class="li">
+          <span class="dot" style="background:${color}"></span>
+          <span class="li-label">${SUMMARY_LABELS[key]}</span>
+          <span class="li-pct">${count} (${Math.round(pct)}%)</span>
+        </div>`);
+      cursor += pct;
+    }
+    const gradient = stops.length ? stops.join(", ") : "var(--neutral-bg) 0 100%";
+
+    el.innerHTML = `
+      <div class="donut-wrap">
+        <div class="donut" style="--slices: ${gradient}">
+          <div class="donut-hole"><div class="n">${total}</div><div class="l">Total</div></div>
+        </div>
+        <div class="donut-legend">${legend.join("")}</div>
+      </div>`;
+  }
+
+  function renderActivity() {
+    const el = document.getElementById("pm-activity");
+    if (!el) return;
+    const recent = allPipelines
+      .filter((p) => p.last_execution_at)
+      .sort((a, b) => new Date(b.last_execution_at) - new Date(a.last_execution_at))
+      .slice(0, 5);
+
+    if (recent.length === 0) {
+      el.innerHTML = `<div class="muted" style="font-size:12.5px">No executions recorded yet.</div>`;
+      return;
+    }
+
+    el.innerHTML = recent.map((p) => `
+      <div class="activity-item" onclick="location.hash='#/pipeline-monitor/${encodeURIComponent(p.pipeline_name)}'">
+        <span class="activity-dot" style="background:${STATUS_HEX[p.execution_status] || "#57606a"}"></span>
+        <div class="activity-body">
+          <div class="activity-name">${Utils.escapeHtml(p.pipeline_name)}</div>
+          <div class="activity-meta">${Utils.dash(p.last_execution_status)} · ${Utils.relativeTime(p.last_execution_at)}</div>
+        </div>
+      </div>`).join("");
+  }
+
+  function renderInsights() {
+    const el = document.getElementById("pm-insights");
+    if (!el) return;
+    const insights = [];
+    const neverRun = lastSummary.never_run || 0;
+    const failed = lastSummary.failed || 0;
+    const configIssues = lastSummary.unknown || 0;
+    const envs = Array.from(new Set(allPipelines.map((p) => p.environment).filter(Boolean)));
+
+    if (neverRun > 0) {
+      insights.push({ icon: ICONS.never_run, title: `${neverRun} pipeline${neverRun === 1 ? "" : "s"} have never run`, desc: "Check schedules and permissions." });
+    }
+    if (failed > 0) {
+      insights.push({ icon: ICONS.failed, title: `${failed} pipeline${failed === 1 ? "" : "s"} failed in their last execution`, desc: "Review logs for details." });
+    }
+    if (configIssues > 0) {
+      insights.push({ icon: ICONS.unknown, title: `${configIssues} pipeline${configIssues === 1 ? "" : "s"} need configuration`, desc: "Schedule or grace period isn't fully set up." });
+    }
+    if (envs.length === 1) {
+      insights.push({ icon: ICONS.fresh, title: `All pipelines are in ${envs[0]} environment`, desc: "No other environments configured.", ok: true });
+    } else if (envs.length > 1) {
+      insights.push({ icon: ICONS.total, title: `Pipelines span ${envs.length} environments`, desc: envs.join(", ") });
+    }
+    if (insights.length === 0) {
+      insights.push({ icon: ICONS.fresh, title: "All pipelines are healthy", desc: "No issues detected right now.", ok: true });
+    }
+
+    el.innerHTML = `<div class="insight-list">${insights.map((i) => `
+      <div class="insight-item">
+        <span class="insight-icon${i.ok ? " ok" : ""}">${i.icon}</span>
+        <div>
+          <div class="insight-title">${i.title}</div>
+          <div class="insight-desc">${i.desc}</div>
+        </div>
+      </div>`).join("")}</div>`;
   }
 
   // Exposed on Views so inline onclick handlers (rendered as raw HTML
