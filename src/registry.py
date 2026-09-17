@@ -1,6 +1,16 @@
-"""Loads the manually-curated pipeline registry from config/registry.yaml."""
+"""Loads the optional, manually-curated pipeline registry from
+config/registry.yaml.
+
+Discovery (see discovery.py/handler.py) is the single source of truth for
+*which* state machines are monitored - every one in the account, always.
+This file is consulted per-ARN purely as an optional metadata overlay
+(trusted schedule, output location, owner, alerting, exclusions) on top of
+that. It is never required to exist: a missing file behaves exactly like an
+empty one, so the monitor still runs from discovery alone.
+"""
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import List, Set
 
@@ -8,12 +18,35 @@ import yaml
 
 from .models import OutputConfig, PipelineConfig, ScheduleConfig
 
+logger = logging.getLogger("pipeline_freshness_monitor.registry")
+
 DEFAULT_REGISTRY_PATH = Path(__file__).resolve().parent.parent / "config" / "registry.yaml"
 
 
+def _load_raw(path: Path) -> dict:
+    """A missing file is expected and silent (see module docstring - this
+    file is optional). Malformed YAML is not expected, but must degrade the
+    same way rather than raise: both handler.py's and lineage_handler.py's
+    lambda_handler call load_registry()/load_excluded_names() before their
+    per-pipeline try/except blocks even start, so an uncaught error here
+    would crash the entire run - every pipeline, not just a mis-configured
+    row - the exact single point of failure this project's design otherwise
+    goes out of its way to avoid. Logged as a warning (unlike the silent
+    missing-file case) because a syntax error in a file someone deliberately
+    edited is worth knowing about, even though the monitor keeps running.
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        return {}
+    except yaml.YAMLError:
+        logger.warning("config/registry.yaml is not valid YAML - proceeding as if it were empty", exc_info=True)
+        return {}
+
+
 def load_registry(path: Path = DEFAULT_REGISTRY_PATH) -> List[PipelineConfig]:
-    with open(path, "r", encoding="utf-8") as f:
-        raw = yaml.safe_load(f)
+    raw = _load_raw(path)
 
     pipelines = []
     for entry in raw.get("pipelines", []):
@@ -60,12 +93,11 @@ def load_monitored_registry(path: Path = DEFAULT_REGISTRY_PATH) -> List[Pipeline
 
 
 def load_excluded_names(path: Path = DEFAULT_REGISTRY_PATH) -> Set[str]:
-    """Optional escape hatch for auto-discovery: state machine names listed
-    under a top-level `excluded:` key in registry.yaml are skipped entirely
-    by the discovery phase (no AWS calls, no DynamoDB item written for them).
-    Absent/empty by default - discovery's default behavior is to surface
-    everything it finds, not to hide it.
+    """State machine names listed under a top-level `excluded:` key in
+    registry.yaml are skipped entirely (no AWS calls, no DynamoDB item
+    written for them) - e.g. AWS's own internal automation stacks, or
+    throwaway console experiments that aren't real pipelines. Absent/empty
+    by default - the default behavior is to surface everything found, not
+    to hide it.
     """
-    with open(path, "r", encoding="utf-8") as f:
-        raw = yaml.safe_load(f)
-    return set(raw.get("excluded") or [])
+    return set(_load_raw(path).get("excluded") or [])

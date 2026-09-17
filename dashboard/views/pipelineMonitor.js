@@ -166,7 +166,8 @@
     if (!select) return;
     const current = select.value;
     const envs = Array.from(new Set(allPipelines.map((p) => p.environment).filter(Boolean))).sort();
-    select.innerHTML = `<option value="">All environments</option>` + envs.map((e) => `<option value="${e}">${e}</option>`).join("");
+    select.innerHTML = `<option value="">All environments</option>` +
+      envs.map((e) => `<option value="${e}">${e === "unregistered" ? "Not specified" : e}</option>`).join("");
     select.value = envs.includes(current) ? current : "";
   }
 
@@ -276,18 +277,16 @@
     const rows = pipelines.map((p) => `
       <tr class="clickable${p.execution_status === "failed" ? " row-failed" : ""}" onclick="location.hash='#/pipeline-monitor/${encodeURIComponent(p.pipeline_name)}'">
         <td>
-          <div class="pname">${Utils.escapeHtml(p.pipeline_name)} ${p.review_status && p.review_status !== "confirmed" ? `<span class="badge ${p.review_status === "needs_review" ? "badge-unknown" : "badge-delayed"}">${Utils.reviewStatusLabel(p)}</span>` : ""}</div>
+          <div class="pname">${Utils.escapeHtml(p.pipeline_name)} ${p.review_status === "needs_review" ? `<span class="badge badge-not_configured">${Utils.reviewStatusLabel(p)}</span>` : ""}</div>
           <div class="psub">${Utils.notAssigned(p.owner)}</div>
         </td>
         <td class="nowrap">${Utils.envBadge(p.environment)}</td>
-        <td>${Utils.badge(p.execution_status, EXEC_META)}<div class="reason">${p.execution_reason || ""}</div></td>
-        <td>${Utils.badge(p.data_status, DATA_META)}<div class="reason">${p.data_reason || ""}</div></td>
-        <td class="nowrap">${Utils.fmtTime(p.last_successful_execution_at)}</td>
-        <td class="nowrap">${Utils.dash(p.last_execution_status)}<div class="psub">${Utils.fmtTime(p.last_execution_at)}</div></td>
-        <td class="nowrap">${Utils.fmtTime(p.expected_next_run)}</td>
-        <td class="nowrap">${Utils.fmtDuration(p.last_execution_duration_seconds)}</td>
-        <td class="nowrap">${p.alerting_enabled ? '<span class="badge badge-enabled">Enabled</span>' : '<span class="badge badge-disabled">Disabled</span>'}</td>
-        <td class="nowrap">${Utils.fmtTime(p.last_checked_at)}</td>
+        <td>${Utils.badge(p.execution_status, EXEC_META)}<div class="reason" title="${Utils.escapeHtml(p.execution_reason || "")}">${p.execution_reason || ""}</div></td>
+        <td>${Utils.badge(p.data_status, DATA_META)}<div class="reason" title="${Utils.escapeHtml(p.data_reason || "")}">${p.data_reason || ""}</div></td>
+        <td class="nowrap">${Utils.fmtTime(p.last_successful_execution_at, "No successful run yet")}</td>
+        <td class="nowrap">${Utils.fmtTime(p.expected_next_run, "Not scheduled")}</td>
+        <td class="nowrap">${Utils.fmtDuration(p.last_execution_duration_seconds, "Not available")}</td>
+        <td class="nowrap">${Utils.escapeHtml(Utils.scheduleLabel(p))}</td>
         <td class="nowrap"><button class="view-btn" onclick="event.stopPropagation(); location.hash='#/pipeline-monitor/${encodeURIComponent(p.pipeline_name)}'">View</button></td>
       </tr>
     `);
@@ -296,9 +295,8 @@
       <table>
         <thead>
           <tr>
-            <th>Pipeline</th><th>Env</th><th>Execution Health</th><th>Data Freshness</th>
-            <th>Last Successful Run</th><th>Last Execution</th><th>Expected Next Run</th>
-            <th>Duration</th><th>Alerting</th><th>Last Checked</th><th>Actions</th>
+            <th>Pipeline</th><th>Environment</th><th>Execution Health</th><th>Data Freshness</th>
+            <th>Last Successful Run</th><th>Next Run</th><th>Duration</th><th>Trigger</th><th>Actions</th>
           </tr>
         </thead>
         <tbody>${rows.join("")}</tbody>

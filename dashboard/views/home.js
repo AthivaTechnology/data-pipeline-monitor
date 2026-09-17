@@ -7,6 +7,14 @@ Views.home = async function (container) {
     error = e.message;
   }
 
+  let lineageSummary = null;
+  try {
+    lineageSummary = await Api.fetchLineageSummary();
+  } catch (e) {
+    // Lineage card just falls back to its "not yet run" state below - a
+    // failure to load it should never block the rest of the homepage.
+  }
+
   const s = status ? status.summary : {};
   const total = status ? status.total_pipelines : null;
 
@@ -59,11 +67,17 @@ Views.home = async function (container) {
       </div>
 
       <a class="module-card module-card-link" href="#/lineage">
-        <span class="m-badge m-badge-soon">Coming Soon</span>
+        ${lineageSummary && lineageSummary.discovery_has_run
+          ? `<span class="m-badge m-badge-live">Active</span>`
+          : `<span class="m-badge m-badge-soon">Discovery pending</span>`}
         <span class="m-icon m-icon-alt">${ICONS.network}</span>
         <h2>AWS Data Lineage &amp; Catalog</h2>
         <p class="m-desc">Explore AWS resources, data flows, dependencies, and impact analysis.</p>
-        <div class="reason">Discovery module not yet implemented — no resource or relationship data exists yet.</div>
+        <div class="reason">
+          ${lineageSummary && lineageSummary.discovery_has_run
+            ? `${lineageSummary.total_resources} resource${lineageSummary.total_resources === 1 ? "" : "s"} and ${lineageSummary.total_relationships} relationship${lineageSummary.total_relationships === 1 ? "" : "s"} discovered across ${lineageSummary.total_pipelines_scanned} pipeline${lineageSummary.total_pipelines_scanned === 1 ? "" : "s"}.`
+            : "Discovery runs automatically once a day — results will appear here after the first run."}
+        </div>
         <div class="m-footer" style="margin-top:16px"><span class="btn">Explore Lineage →</span></div>
       </a>
     </div>

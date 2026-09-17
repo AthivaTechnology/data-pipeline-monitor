@@ -65,60 +65,24 @@ Resources:
       Policies:
         - AWSLambdaBasicExecutionRole
         - Statement:
-            - Sid: ReadRegisteredStepFunctions
-              Effect: Allow
-              Action:
-                - states:ListExecutions
-              Resource:
-                # Least privilege: only the state machines currently in
-                # config/registry.yaml. Add a new ARN here when a pipeline is
-                # registered - this policy is intentionally not wildcarded
-                # across all Step Functions in the account.
-                - arn:aws:states:us-east-1:382625484581:stateMachine:athena_data_export
-                - arn:aws:states:us-east-1:382625484581:stateMachine:syco_unload_and_hourly_refresh
-                - arn:aws:states:us-east-1:382625484581:stateMachine:pulse_data_load
-                - arn:aws:states:us-east-1:382625484581:stateMachine:audit_load_batch
-                - arn:aws:states:us-east-1:382625484581:stateMachine:v2-lhg-dynamodb-export-s3
-                - arn:aws:states:us-east-1:382625484581:stateMachine:connect_lake_load_batch
-                - arn:aws:states:us-east-1:382625484581:stateMachine:ansible_data_load
-                - arn:aws:states:us-east-1:382625484581:stateMachine:twilio_data_extract
-                - arn:aws:states:us-east-1:382625484581:stateMachine:ringcentral_transcribe_job
-                - arn:aws:states:us-east-1:382625484581:stateMachine:syco_incremental_export
-            - Sid: ReadRegisteredStepFunctionExecutions
-              Effect: Allow
-              Action:
-                - states:DescribeExecution
-              Resource:
-                - arn:aws:states:us-east-1:382625484581:execution:athena_data_export:*
-                - arn:aws:states:us-east-1:382625484581:execution:syco_unload_and_hourly_refresh:*
-                - arn:aws:states:us-east-1:382625484581:execution:pulse_data_load:*
-                - arn:aws:states:us-east-1:382625484581:execution:audit_load_batch:*
-                - arn:aws:states:us-east-1:382625484581:execution:v2-lhg-dynamodb-export-s3:*
-                - arn:aws:states:us-east-1:382625484581:execution:connect_lake_load_batch:*
-                - arn:aws:states:us-east-1:382625484581:execution:ansible_data_load:*
-                - arn:aws:states:us-east-1:382625484581:execution:twilio_data_extract:*
-                - arn:aws:states:us-east-1:382625484581:execution:ringcentral_transcribe_job:*
-                - arn:aws:states:us-east-1:382625484581:execution:syco_incremental_export:*
-            - Sid: ReadRegisteredOutputObjects
-              Effect: Allow
-              Action:
-                - s3:GetObject
-              Resource:
-                # Least privilege: exact registered output key(s) only, not the bucket.
-                - arn:aws:s3:::athiva-leadgen-bucket/vip_queue/Customer_details.csv
             - Sid: WriteOwnStatusTable
               Effect: Allow
               Action:
                 - dynamodb:PutItem
               Resource: !GetAtt PipelineStatusTable.Arn
-            # ---- Account-wide discovery (read-only) ----
-            # Unlike the statements above, these cannot be scoped to specific
-            # ARNs: discovery's entire purpose is to find state machines that
-            # are NOT in config/registry.yaml, so their ARNs are unknown at
-            # policy-authoring time. Every action here is a List/Describe/Get
-            # read - nothing here can create, modify, start, stop, or delete
-            # anything.
-            - Sid: DiscoverAndReadUnregisteredStepFunctions
+            # ---- Account-wide Step Functions discovery + monitoring (read-only) ----
+            # AWS Step Functions is the single source of truth for which
+            # pipelines exist - every state machine in the account is found
+            # and processed through this same set of permissions, so this
+            # cannot be scoped to specific ARNs the way a registry-driven
+            # policy could. Every action here is a List/Describe/Get read -
+            # nothing here can create, modify, start, stop, or delete
+            # anything. (If config/registry.yaml ever registers a pipeline's
+            # `output:` location again, that pipeline's exact S3 object would
+            # need its own s3:GetObject grant added here - none is needed
+            # while the registry is empty, since evaluate_data_freshness
+            # never gets a location to check without one.)
+            - Sid: DiscoverAndReadAllStepFunctions
               Effect: Allow
               Action:
                 - states:ListStateMachines
@@ -126,7 +90,65 @@ Resources:
                 - states:ListExecutions
                 - states:DescribeExecution
               Resource: "*"
-            - Sid: DiscoverTriggersForUnregisteredStepFunctions
+            - Sid: DiscoverTriggersForStepFunctions
+              Effect: Allow
+              Action:
+                - events:ListRuleNamesByTarget
+                - events:DescribeRule
+                - scheduler:ListSchedules
+                - scheduler:GetSchedule
+              Resource: "*"
+
+  LineageFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: pipeline-lineage-discovery
+      CodeUri: ./
+      Handler: src.lineage_handler.lambda_handler
+      Description: >
+        Discovers AWS resource lineage (nodes/edges) for every Step Function
+        in the account and writes it to PipelineStatusTable under
+        LINEAGE#-prefixed keys - see lineage_store.py. No new table: this
+        reuses the exact same table as MonitorFunction/ApiFunction.
+      Environment:
+        Variables:
+          STATUS_TABLE_NAME: !Ref PipelineStatusTable
+      Events:
+        Schedule:
+          Type: Schedule
+          Properties:
+            Name: pipeline-lineage-discovery-schedule
+            # A pipeline's structure (which resources it calls) changes far
+            # less often than its execution status - recomputing it every
+            # 15 minutes alongside freshness would be pure waste. Once a day
+            # is enough to pick up new/changed pipelines promptly.
+            Description: Runs lineage discovery once a day.
+            Schedule: rate(1 day)
+            Enabled: true
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - Statement:
+            - Sid: WriteLineageItemsToSharedStatusTable
+              Effect: Allow
+              Action:
+                - dynamodb:PutItem
+              Resource: !GetAtt PipelineStatusTable.Arn
+            # Same read-only, account-wide discovery permissions as
+            # MonitorFunction (states/events/scheduler) - deliberately not
+            # combined into one shared policy/role, so each function's
+            # permissions stay independently auditable against what it
+            # actually does. No Lambda/Firehose/Glue/Athena API permissions
+            # are needed: every resource this scanner detects is classified
+            # directly from the state machine's own ASL definition (already
+            # readable via DescribeStateMachine below), not from a separate
+            # describe call per resource.
+            - Sid: DiscoverStepFunctionsForLineage
+              Effect: Allow
+              Action:
+                - states:ListStateMachines
+                - states:DescribeStateMachine
+              Resource: "*"
+            - Sid: DiscoverTriggersForLineage
               Effect: Allow
               Action:
                 - events:ListRuleNamesByTarget
@@ -155,6 +177,29 @@ Resources:
           Type: HttpApi
           Properties:
             Path: /status/{name}
+            Method: GET
+        GetLineageSummary:
+          Type: HttpApi
+          Properties:
+            Path: /lineage
+            Method: GET
+        GetLineageDetail:
+          Type: HttpApi
+          Properties:
+            Path: /lineage/{name}
+            Method: GET
+        GetResourcesList:
+          Type: HttpApi
+          Properties:
+            Path: /resources
+            Method: GET
+        GetResourceDetail:
+          Type: HttpApi
+          Properties:
+            # Greedy {arn+} on purpose - an ARN can contain literal "/"
+            # (e.g. an S3 object ARN), which a plain {arn} path variable
+            # would truncate at.
+            Path: /resources/{arn+}
             Method: GET
       Policies:
         - AWSLambdaBasicExecutionRole

@@ -58,11 +58,12 @@ def list_all_state_machines(region: str) -> List[dict]:
     return machines
 
 
-def get_definition(arn: str, region: str) -> Optional[str]:
-    """Best-effort fetch of a state machine's ASL definition (raw JSON string)
-    for resource_scanner.py to inspect. Returns None (never raises) on any
-    failure - a missing definition just means resource detection is skipped
-    for that pipeline, not that discovery fails.
+def describe_state_machine_details(arn: str, region: str) -> Optional[dict]:
+    """Best-effort single describe_state_machine call, returning everything
+    callers need from it: {definition, status} for resource_scanner.py and
+    the dashboard's "state machine status" field. Returns None (never
+    raises) on any failure - callers treat that as "nothing detected", not
+    as a reason to fail discovery for that pipeline.
     """
     client = _get_client(region)
     try:
@@ -70,4 +71,4 @@ def get_definition(arn: str, region: str) -> Optional[str]:
     except (ClientError, BotoCoreError) as exc:
         logger.warning("describe_state_machine failed for %s: %s", arn, exc)
         return None
-    return response.get("definition")
+    return {"definition": response.get("definition"), "status": response.get("status")}

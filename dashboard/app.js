@@ -72,15 +72,16 @@ const Utils = {
   // "data missing" - said explicitly so it reads as an actionable state.
   notAssigned(v) { return (v === null || v === undefined || v === "") ? "Not assigned" : v; },
 
-  fmtTime(ts) {
-    if (!ts) return "—";
+  fmtTime(ts, fallback) {
+    const na = fallback || "—";
+    if (!ts) return na;
     const d = new Date(ts);
-    if (isNaN(d.getTime())) return "—";
+    if (isNaN(d.getTime())) return na;
     return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
   },
 
-  fmtDuration(seconds) {
-    if (seconds === null || seconds === undefined) return "—";
+  fmtDuration(seconds, fallback) {
+    if (seconds === null || seconds === undefined) return fallback || "—";
     const s = Number(seconds);
     if (s < 60) return `${s.toFixed(1)}s`;
     const m = Math.floor(s / 60);
@@ -162,7 +163,10 @@ const Utils = {
   },
 
   envBadge(env) {
-    if (!env) return "—";
+    // "unregistered" means "auto-discovered, nobody has set an environment
+    // for it yet" - not an error state, so it gets plain muted text instead
+    // of a badge that would visually flag the row as broken/different.
+    if (!env || env === "unregistered") return `<span class="muted">Not specified</span>`;
     return `<span class="badge badge-env">${Utils.escapeHtml(env)}</span>`;
   },
 
@@ -198,6 +202,44 @@ const Api = {
 
   async fetchPipeline(name) {
     const res = await fetch(`${API_BASE}/status/${encodeURIComponent(name)}`, { cache: "no-store" });
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch (e) { throw new Error("API returned invalid JSON"); }
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(data.error || data.message || `HTTP ${res.status}`);
+    return data;
+  },
+
+  async fetchLineageSummary() {
+    const res = await fetch(`${API_BASE}/lineage`, { cache: "no-store" });
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch (e) { throw new Error("API returned invalid JSON"); }
+    if (!res.ok) throw new Error(data.error || data.message || `HTTP ${res.status}`);
+    return data;
+  },
+
+  async fetchLineageForPipeline(name) {
+    const res = await fetch(`${API_BASE}/lineage/${encodeURIComponent(name)}`, { cache: "no-store" });
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch (e) { throw new Error("API returned invalid JSON"); }
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(data.error || data.message || `HTTP ${res.status}`);
+    return data;
+  },
+
+  async fetchResources() {
+    const res = await fetch(`${API_BASE}/resources`, { cache: "no-store" });
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch (e) { throw new Error("API returned invalid JSON"); }
+    if (!res.ok) throw new Error(data.error || data.message || `HTTP ${res.status}`);
+    return data;
+  },
+
+  async fetchResource(resourceId) {
+    const res = await fetch(`${API_BASE}/resources/${encodeURIComponent(resourceId)}`, { cache: "no-store" });
     const text = await res.text();
     let data;
     try { data = JSON.parse(text); } catch (e) { throw new Error("API returned invalid JSON"); }

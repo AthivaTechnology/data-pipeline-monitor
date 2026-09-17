@@ -54,17 +54,17 @@ def test_list_all_state_machines_returns_empty_list_on_aws_failure():
     assert machines == []
 
 
-def test_get_definition_returns_none_on_failure():
+def test_describe_state_machine_details_returns_none_on_failure():
     client, stubber = _stub_client()
     stubber.add_client_error("describe_state_machine", service_error_code="StateMachineDoesNotExist")
     stubber.activate()
 
-    definition = discovery.get_definition("arn:missing", REGION)
+    details = discovery.describe_state_machine_details("arn:missing", REGION)
 
-    assert definition is None
+    assert details is None
 
 
-def test_get_definition_returns_raw_json_string():
+def test_describe_state_machine_details_returns_definition_and_status():
     client, stubber = _stub_client()
     stubber.add_response(
         "describe_state_machine",
@@ -74,11 +74,12 @@ def test_get_definition_returns_raw_json_string():
             "definition": '{"States": {}}',
             "roleArn": "arn:aws:iam::123:role/x",
             "type": "STANDARD",
+            "status": "ACTIVE",
             "creationDate": "2026-01-01T00:00:00Z",
         },
     )
     stubber.activate()
 
-    definition = discovery.get_definition("arn:a", REGION)
+    details = discovery.describe_state_machine_details("arn:a", REGION)
 
-    assert definition == '{"States": {}}'
+    assert details == {"definition": '{"States": {}}', "status": "ACTIVE"}

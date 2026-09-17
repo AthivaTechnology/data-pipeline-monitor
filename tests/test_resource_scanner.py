@@ -1,6 +1,6 @@
 import json
 
-from src.resource_scanner import scan_definition, scan_definition_json
+from src.resource_scanner import classify_resource, scan_definition, scan_definition_json
 
 
 def test_no_references_found():
@@ -52,3 +52,56 @@ def test_scan_definition_json_accepts_valid_json():
 def test_empty_or_none_definition_yields_no_detections():
     assert scan_definition("") == []
     assert scan_definition(None) == []
+
+
+# ---------------- classify_resource (used by lineage_scanner.py) ----------------
+
+
+def test_classify_direct_lambda_arn():
+    # Third element: a literal per-resource ARN is a globally unique id.
+    assert classify_resource("arn:aws:lambda:us-east-1:1:function:my_fn") == ("lambda", "my_fn", True)
+
+
+def test_classify_direct_s3_arn():
+    assert classify_resource("arn:aws:s3:::my-bucket/key.csv") == ("s3", "my-bucket", True)
+
+
+def test_classify_direct_firehose_arn():
+    assert classify_resource("arn:aws:firehose:us-east-1:1:deliverystream/my-stream") == ("firehose", "my-stream", True)
+
+
+def test_classify_direct_kinesis_arn():
+    assert classify_resource("arn:aws:kinesis:us-east-1:1:stream/my-stream") == ("kinesis", "my-stream", True)
+
+
+def test_classify_service_integration_without_parameters_returns_no_name():
+    # arn:aws:states:::service:action is a constant, generic string AWS
+    # reuses for every Task using that integration - never globally unique,
+    # and never a name unless Parameters actually reveals one.
+    resource_type, name, is_unique_arn = classify_resource("arn:aws:states:::aws-sdk:firehose:putRecord")
+    assert resource_type == "firehose"
+    assert name is None
+    assert is_unique_arn is False
+
+
+def test_classify_service_integration_recovers_name_from_parameters():
+    result = classify_resource(
+        "arn:aws:states:::lambda:invoke", parameters={"FunctionName": "my_real_function"}
+    )
+    assert result == ("lambda", "my_real_function", False)
+
+
+def test_classify_service_integration_ignores_parameter_referencing_execution_input():
+    # "$.foo" is a JSONPath reference to runtime input, not a real, checkable
+    # name - must not be treated as evidence.
+    resource_type, name, is_unique_arn = classify_resource(
+        "arn:aws:states:::dynamodb:putItem", parameters={"TableName": "$.tableName"}
+    )
+    assert resource_type == "dynamodb"
+    assert name is None
+
+
+def test_classify_unrecognized_resource_returns_none():
+    assert classify_resource("arn:aws:states:::activity:my-activity") is None
+    assert classify_resource("") is None
+    assert classify_resource(None) is None

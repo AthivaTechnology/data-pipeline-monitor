@@ -30,7 +30,7 @@
         <div class="badges">
           ${Utils.badge(p.execution_status, EXEC_META, true)}
           ${Utils.badge(p.data_status, DATA_META, true)}
-          ${p.source === "discovered" ? '<span class="badge badge-unknown badge-lg">Auto-discovered</span>' : ""}
+          ${p.source === "discovered" ? '<span class="badge badge-not_configured badge-lg">Auto-discovered</span>' : ""}
         </div>
       </div>
 
@@ -42,7 +42,7 @@
       <div class="section">
         <h3>Configuration</h3>
         <div class="kv-grid">
-          <div><div class="k">Environment</div><div class="v">${Utils.dash(p.environment)}</div></div>
+          <div><div class="k">Environment</div><div class="v">${p.environment === "unregistered" ? "Not specified" : Utils.dash(p.environment)}</div></div>
           <div><div class="k">Region</div><div class="v">${Utils.dash(p.region)}</div></div>
           <div><div class="k">Owner</div><div class="v">${Utils.notAssigned(p.owner)}</div></div>
           <div><div class="k">Contact</div><div class="v">${Utils.notAssigned(p.contact)}</div></div>
@@ -52,6 +52,8 @@
           <div><div class="k">Configured Schedule</div><div class="v">${Utils.scheduleLabel(p)}</div></div>
           <div><div class="k">Grace Period</div><div class="v">${Utils.gracePeriodLabel(p)}</div></div>
           ${p.source === "discovered" ? `<div><div class="k">Detected Trigger</div><div class="v">${Utils.dash(p.detected_trigger)}</div></div>` : ""}
+          ${p.state_machine_status ? `<div><div class="k">State Machine Status</div><div class="v">${Utils.escapeHtml(p.state_machine_status)}</div></div>` : ""}
+          ${p.created_at ? `<div><div class="k">Created</div><div class="v">${Utils.fmtTime(p.created_at)}</div></div>` : ""}
         </div>
       </div>
 
@@ -68,10 +70,10 @@
         <div class="reason-box">${Utils.escapeHtml(p.execution_reason)}</div>
         ${isNeverRun ? `<p class="footer-note">This pipeline has no execution history yet. That is expected for a pipeline that has never been triggered — it is not a monitoring error.</p>` : ""}
         <div class="kv-grid" style="margin-top:12px">
-          <div><div class="k">Last Successful Execution</div><div class="v">${Utils.fmtTime(p.last_successful_execution_at)}</div></div>
-          <div><div class="k">Last Execution</div><div class="v">${(p.last_execution_status || p.last_execution_at) ? `${Utils.dash(p.last_execution_status)} — ${Utils.fmtTime(p.last_execution_at)}` : "—"}</div></div>
-          <div><div class="k">Last Execution Duration</div><div class="v">${Utils.fmtDuration(p.last_execution_duration_seconds)}</div></div>
-          <div><div class="k">Expected Next Run</div><div class="v">${Utils.fmtTime(p.expected_next_run)}</div></div>
+          <div><div class="k">Last Successful Execution</div><div class="v">${Utils.fmtTime(p.last_successful_execution_at, "No successful run yet")}</div></div>
+          <div><div class="k">Last Execution</div><div class="v">${(p.last_execution_status || p.last_execution_at) ? `${Utils.dash(p.last_execution_status)} — ${Utils.fmtTime(p.last_execution_at)}` : "No execution yet"}</div></div>
+          <div><div class="k">Last Execution Duration</div><div class="v">${Utils.fmtDuration(p.last_execution_duration_seconds, "Not available")}</div></div>
+          <div><div class="k">Expected Next Run</div><div class="v">${Utils.fmtTime(p.expected_next_run, "Not scheduled")}</div></div>
         </div>
       </div>
 

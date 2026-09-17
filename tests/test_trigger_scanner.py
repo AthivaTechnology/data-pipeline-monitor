@@ -110,6 +110,34 @@ def test_returns_not_identified_when_nothing_found_anywhere():
     assert label == "Trigger not identified"
 
 
+def test_detect_trigger_detail_returns_structured_payload_for_lineage():
+    events_stubber = _stub_events()
+    events_stubber.add_response("list_rule_names_by_target", {"RuleNames": ["my-rule"]})
+    events_stubber.add_response(
+        "describe_rule",
+        {"Name": "my-rule", "Arn": "arn:aws:events:us-east-1:1:rule/my-rule", "State": "ENABLED", "ScheduleExpression": "rate(1 day)"},
+    )
+    events_stubber.activate()
+
+    detail = trigger_scanner.detect_trigger_detail(ARN, REGION)
+
+    assert detail["kind"] == "eventbridge"
+    assert detail["name"] == "my-rule"
+    assert detail["resource_id"] == "arn:aws:events:us-east-1:1:rule/my-rule"
+    assert "Schedule detected: rate(1 day)" in detail["label"]
+
+
+def test_detect_trigger_detail_returns_none_when_nothing_found():
+    events_stubber = _stub_events()
+    events_stubber.add_response("list_rule_names_by_target", {"RuleNames": []})
+    events_stubber.activate()
+    scheduler_stubber = _stub_scheduler()
+    scheduler_stubber.add_response("list_schedules", {"Schedules": []})
+    scheduler_stubber.activate()
+
+    assert trigger_scanner.detect_trigger_detail(ARN, REGION) is None
+
+
 def test_aws_failure_is_never_raised():
     events_stubber = _stub_events()
     events_stubber.add_client_error("list_rule_names_by_target", service_error_code="AccessDeniedException")

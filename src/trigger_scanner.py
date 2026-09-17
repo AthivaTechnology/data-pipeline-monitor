@@ -42,7 +42,7 @@ def _scheduler_client(region: str):
     return _scheduler_client_cache[region]
 
 
-def _check_eventbridge_rules(state_machine_arn: str, region: str) -> Optional[str]:
+def _check_eventbridge_rules(state_machine_arn: str, region: str) -> Optional[dict]:
     client = _events_client(region)
     try:
         rule_names = []
@@ -65,14 +65,22 @@ def _check_eventbridge_rules(state_machine_arn: str, region: str) -> Optional[st
 
         schedule_expr = rule.get("ScheduleExpression")
         if schedule_expr:
-            return f"Schedule detected: {schedule_expr} (EventBridge rule {rule_name})"
+            return {
+                "kind": "eventbridge", "name": rule_name,
+                "resource_id": rule.get("Arn") or f"eventbridge-rule:{rule_name}",
+                "label": f"Schedule detected: {schedule_expr} (EventBridge rule {rule_name})",
+            }
         if rule.get("EventPattern"):
-            return f"Event triggered (EventBridge rule {rule_name})"
+            return {
+                "kind": "eventbridge", "name": rule_name,
+                "resource_id": rule.get("Arn") or f"eventbridge-rule:{rule_name}",
+                "label": f"Event triggered (EventBridge rule {rule_name})",
+            }
 
     return None
 
 
-def _check_eventbridge_scheduler(state_machine_arn: str, region: str) -> Optional[str]:
+def _check_eventbridge_scheduler(state_machine_arn: str, region: str) -> Optional[dict]:
     client = _scheduler_client(region)
     try:
         schedule_names = []
@@ -99,19 +107,28 @@ def _check_eventbridge_scheduler(state_machine_arn: str, region: str) -> Optiona
 
         expr = detail.get("ScheduleExpression")
         if expr:
-            return f"Schedule detected: {expr} (EventBridge Scheduler {name})"
+            return {
+                "kind": "eventbridge", "name": name,
+                "resource_id": detail.get("Arn") or f"eventbridge-schedule:{name}",
+                "label": f"Schedule detected: {expr} (EventBridge Scheduler {name})",
+            }
 
     return None
 
 
+def detect_trigger_detail(state_machine_arn: str, region: str) -> Optional[dict]:
+    """Returns {"kind", "name", "resource_id", "label"} for the first
+    enabled trigger found, or None if none was identified - never raises,
+    never guesses. `detect_trigger()` below is a thin, backward-compatible
+    wrapper over this for callers that only need the display label.
+    """
+    detail = _check_eventbridge_rules(state_machine_arn, region)
+    if detail:
+        return detail
+    return _check_eventbridge_scheduler(state_machine_arn, region)
+
+
 def detect_trigger(state_machine_arn: str, region: str) -> str:
     """Returns a single human-readable label - never raises, never guesses."""
-    label = _check_eventbridge_rules(state_machine_arn, region)
-    if label:
-        return label
-
-    label = _check_eventbridge_scheduler(state_machine_arn, region)
-    if label:
-        return label
-
-    return _NOT_IDENTIFIED
+    detail = detect_trigger_detail(state_machine_arn, region)
+    return detail["label"] if detail else _NOT_IDENTIFIED
