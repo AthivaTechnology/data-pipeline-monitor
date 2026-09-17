@@ -10,14 +10,22 @@ Views.home = async function (container) {
   const s = status ? status.summary : {};
   const total = status ? status.total_pipelines : null;
 
-  // Exactly the 4 metrics requested for the Home page card - a different,
-  // smaller subset than the Pipeline Monitor page's own summary cards.
+  // Each stat links straight into Pipeline Monitor pre-filtered to that
+  // status (?status=<key>, read by pipelineMonitor.js on load) - clicking a
+  // number takes you to exactly the pipelines behind it, not just the page.
+  const METRIC_DEFS = [
+    { key: "total", label: "Total", cls: "mm-total", value: total, href: "#/pipeline-monitor" },
+    { key: "fresh", label: "Fresh", cls: "mm-fresh", value: s.fresh || 0, href: "#/pipeline-monitor?status=fresh" },
+    { key: "failed", label: "Failed", cls: "mm-failed", value: s.failed || 0, href: "#/pipeline-monitor?status=failed" },
+    { key: "delayed", label: "Delayed", cls: "mm-delayed", value: s.delayed || 0, href: "#/pipeline-monitor?status=delayed" },
+    { key: "stale", label: "Stale", cls: "mm-stale", value: s.stale || 0, href: "#/pipeline-monitor?status=stale" },
+  ];
   const monitorMetrics = status
     ? `<div class="m-metrics">
-        <div class="mm"><div class="n">${total}</div><div class="l">Total</div></div>
-        <div class="mm"><div class="n">${s.fresh || 0}</div><div class="l">Fresh</div></div>
-        <div class="mm"><div class="n">${s.failed || 0}</div><div class="l">Failed</div></div>
-        <div class="mm"><div class="n">${s.never_run || 0}</div><div class="l">Never Run</div></div>
+        ${METRIC_DEFS.map((m) => `
+          <a class="mm ${m.cls}" href="${m.href}" onclick="event.stopPropagation()">
+            <div class="n">${m.value}</div><div class="l">${m.label}</div>
+          </a>`).join("")}
       </div>`
     : `<div class="reason">${error ? `Could not load live metrics: ${Utils.escapeHtml(error)}` : "No live data available."}</div>`;
 
@@ -33,7 +41,7 @@ Views.home = async function (container) {
       <div class="hero-blob hero-blob-a"></div>
       <div class="hero-blob hero-blob-b"></div>
       <div class="hero-content">
-        ${BRAND_LOGO.replace('viewBox="0 0 40 40"', 'viewBox="0 0 40 40" class="hero-logo"')}
+        ${BRAND_LOGO.replace('viewBox="0 0 40 40"', 'viewBox="0 0 40 40" class="hero-logo" width="56" height="56"')}
         <h1 class="hero-title">Athivatech</h1>
         <div class="hero-subtitle">Data Reliability Platform</div>
         <p class="hero-tagline">Monitor. Understand. Trust your data.</p>
@@ -41,14 +49,14 @@ Views.home = async function (container) {
     </div>
 
     <div class="module-cards">
-      <a class="module-card module-card-link" href="#/pipeline-monitor">
+      <div class="module-card module-card-clickable" onclick="location.hash='#/pipeline-monitor'">
         <span class="m-badge m-badge-live">Operational</span>
         <span class="m-icon">${ICONS.pulse}</span>
         <h2>Pipeline Monitor</h2>
         <p class="m-desc">Monitor pipeline execution health and data freshness across registered AWS Step Functions.</p>
         ${monitorMetrics}
-        <div class="m-footer"><span class="btn btn-primary">Open Monitor →</span></div>
-      </a>
+        <div class="m-footer"><a class="btn btn-primary" href="#/pipeline-monitor" onclick="event.stopPropagation()">Open Monitor &rarr;</a></div>
+      </div>
 
       <a class="module-card module-card-link" href="#/lineage">
         <span class="m-badge m-badge-soon">Coming Soon</span>

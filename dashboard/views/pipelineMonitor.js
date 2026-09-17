@@ -115,10 +115,15 @@
     document.getElementById("pm-env-filter").addEventListener("change", renderContent);
     document.getElementById("pm-status-filter").addEventListener("change", renderContent);
 
+    // Deep-link support: Home's stat links navigate to
+    // #/pipeline-monitor?status=<key> to arrive here pre-filtered.
+    const initialStatus = initialStatusFromHash();
+    if (initialStatus) document.getElementById("pm-status-filter").value = initialStatus;
+
     await loadData(false);
 
     refreshTimer = setInterval(() => {
-      if (!/^#\/pipeline-monitor\/?$/.test(location.hash)) {
+      if (!/^#\/pipeline-monitor\/?(?:\?.*)?$/.test(location.hash)) {
         clearInterval(refreshTimer);
         return;
       }
@@ -128,6 +133,12 @@
       if (el) el.textContent = `auto-refreshing in ${Math.max(countdown, 0)}s`;
     }, 1000);
   };
+
+  function initialStatusFromHash() {
+    const queryPart = location.hash.split("?")[1];
+    if (!queryPart) return "";
+    return new URLSearchParams(queryPart).get("status") || "";
+  }
 
   async function loadData(isManual) {
     const btn = document.getElementById("pm-refresh-btn");

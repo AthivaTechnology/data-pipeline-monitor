@@ -224,7 +224,7 @@ const Views = {}; // populated by dashboard/views/*.js
 // ---------------- Router ----------------
 const ROUTES = [
   { pattern: /^#\/?$/, view: "home", nav: "home" },
-  { pattern: /^#\/pipeline-monitor\/?$/, view: "pipelineMonitor", nav: "pipeline-monitor" },
+  { pattern: /^#\/pipeline-monitor\/?(?:\?.*)?$/, view: "pipelineMonitor", nav: "pipeline-monitor" },
   { pattern: /^#\/pipeline-monitor\/([^/]+)\/?$/, view: "pipelineDetail", params: ["name"], nav: "pipeline-monitor" },
   { pattern: /^#\/lineage\/?$/, view: "lineage", nav: "lineage" },
   { pattern: /^#\/lineage\/catalog\/?$/, view: "catalog", nav: "lineage" },
