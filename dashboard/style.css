@@ -33,6 +33,10 @@ a:hover { text-decoration: underline; }
   white-space: nowrap; color: #fff; text-decoration: none;
 }
 .navbar .brand:hover { text-decoration: none; }
+/* Logo image is a purple circle on a white square (source asset as-is) -
+   clip to a circle and scale up slightly so no white margin shows. */
+.brand-mark-wrap { display: inline-flex; flex: 0 0 auto; border-radius: 50%; overflow: hidden; width: 32px; height: 32px; }
+.brand-mark-img { width: 100%; height: 100%; object-fit: cover; transform: scale(1.12); display: block; }
 .brand-logo { width: 32px; height: 32px; flex: 0 0 auto; }
 .brand-text { display: flex; flex-direction: column; line-height: 1.15; }
 .brand-name { font-weight: 700; font-size: 14.5px; }
@@ -181,6 +185,8 @@ a:hover { text-decoration: underline; }
   padding-top: 20px; border-top: 1px solid var(--border);
 }
 .site-footer-brand { font-weight: 700; color: var(--text); font-size: 13px; margin-bottom: 2px; }
+.footer-logo { width: 22px; height: 22px; margin: 0 auto 8px; }
+.footer-tagline { font-size: 11.5px; margin-top: 6px; color: var(--text-muted); }
 
 /* ---------- Summary cards ---------- */
 .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(172px, 1fr)); gap: 12px; margin-bottom: 20px; }

@@ -48,23 +48,11 @@ const SUMMARY_LABELS = {
 };
 
 // Shared brand mark + a small set of general-purpose icons reused across
-// Home, the navbar, and the Lineage empty state. Plain inline SVG (no icon
-// font/library) - consistent with the rest of this dashboard.
-const BRAND_LOGO = `
-  <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <linearGradient id="athivatechLogoGrad" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
-        <stop offset="0" stop-color="#6366f1"/>
-        <stop offset="0.55" stop-color="#8b5cf6"/>
-        <stop offset="1" stop-color="#14b8a6"/>
-      </linearGradient>
-    </defs>
-    <rect width="40" height="40" rx="10" fill="url(#athivatechLogoGrad)"/>
-    <path d="M12 24a5 5 0 0 1 1-9.9 6 6 0 0 1 11.4-2A5.5 5.5 0 0 1 27 24H12z" fill="#fff" fill-opacity="0.95"/>
-    <circle cx="14.5" cy="28.5" r="1.3" fill="#fff" fill-opacity="0.85"/>
-    <circle cx="20" cy="29.5" r="1.3" fill="#fff" fill-opacity="0.85"/>
-    <circle cx="25.5" cy="28.5" r="1.3" fill="#fff" fill-opacity="0.85"/>
-  </svg>`;
+// Home, the navbar, and the Lineage empty state. The logo image itself is
+// the company's actual brand asset (dashboard/assets/athivatech-logo.jpg,
+// sourced from the devops-onboarding-platform repo), not a recreation -
+// callers size it by adding a modifier class onto .brand-mark-wrap.
+const BRAND_LOGO = `<span class="brand-mark-wrap"><img src="assets/athivatech-logo.jpg" alt="Athivatech" class="brand-mark-img" /></span>`;
 
 const ICONS = {
   shield: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3 8-8 9-5-1-8-4.5-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg>',

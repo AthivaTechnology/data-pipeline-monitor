@@ -41,7 +41,7 @@ Views.home = async function (container) {
       <div class="hero-blob hero-blob-a"></div>
       <div class="hero-blob hero-blob-b"></div>
       <div class="hero-content">
-        ${BRAND_LOGO.replace('viewBox="0 0 40 40"', 'viewBox="0 0 40 40" class="hero-logo" width="56" height="56"')}
+        ${BRAND_LOGO.replace('class="brand-mark-wrap"', 'class="brand-mark-wrap hero-logo"')}
         <h1 class="hero-title">Athivatech</h1>
         <div class="hero-subtitle">Data Reliability Platform</div>
         <p class="hero-tagline">Monitor. Understand. Trust your data.</p>
@@ -78,8 +78,10 @@ Views.home = async function (container) {
     </div>
 
     <div class="site-footer">
+      ${BRAND_LOGO.replace('class="brand-mark-wrap"', 'class="brand-mark-wrap footer-logo"')}
       <div class="site-footer-brand">Athivatech</div>
       <div>Data Reliability Platform</div>
+      <div class="footer-tagline">Built for a more reliable data future</div>
     </div>
   `;
 };
