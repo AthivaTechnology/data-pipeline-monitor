@@ -40,6 +40,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Dict, Optional
 
+from .application_handler import run_application_discovery
 from .collector import collect_pipeline_state
 from .data_freshness import DataFreshnessStatus, evaluate_data_freshness
 from .discovery import describe_state_machine_details, list_all_state_machines
@@ -302,6 +303,11 @@ def lambda_handler(event, context):
     # point ever runs for a lineage-mode invocation.
     if event.get("mode") == "lineage":
         return run_lineage_discovery()
+
+    # Same pattern, a third schedule: rate(1 day), {"mode": "applications"},
+    # offset from the lineage schedule - see application_handler.py.
+    if event.get("mode") == "applications":
+        return run_application_discovery()
 
     now = datetime.now(timezone.utc)
     registry_by_arn = _registry_lookup()

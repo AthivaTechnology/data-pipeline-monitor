@@ -58,6 +58,7 @@
           ${pipelineNames.map((n) => `<option value="${Utils.escapeHtml(n)}">${Utils.escapeHtml(n)}</option>`).join("")}
         </select>
         <a class="btn" href="#/lineage/catalog">Browse full resource catalog →</a>
+        <a class="btn" href="#/applications/data-exporter">Application Dependency pilot: data-exporter →</a>
         <span class="spacer"></span>
       </div>
 
@@ -134,6 +135,7 @@
       step_function: "Step Function", eventbridge: "EventBridge", lambda: "Lambda",
       s3: "S3", dynamodb: "DynamoDB", sns: "SNS", sqs: "SQS", kinesis: "Kinesis",
       firehose: "Firehose", glue: "Glue", athena: "Athena", redshift: "Redshift", rds: "RDS",
+      iam_role: "IAM Role", cloudwatch_alarm: "CloudWatch Alarm",
     };
     return labels[t] || t;
   }

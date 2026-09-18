@@ -6,6 +6,9 @@ GET /lineage             -> lineage discovery summary (counts, last run)
 GET /lineage/{name}      -> one pipeline's lineage graph (nodes + edges)
 GET /resources           -> deduped catalog of every discovered AWS resource
 GET /resources/{arn+}    -> one resource's detail + upstream/downstream
+GET /applications/{id}                        -> one application's summary + full resource inventory + edges
+GET /applications/{id}/resources/{resource_id+} -> one resource's detail, upstream/downstream, and
+                                                    computed "impact" (full transitive downstream)
 
 This Lambda never touches AWS APIs directly - it only reads what the monitor
 Lambda and the lineage Lambda already computed and stored in DynamoDB (the
@@ -19,6 +22,7 @@ import logging
 import os
 from typing import Any, Dict, List
 
+from .application_store import get_all_application_resources, get_application_summary
 from .lineage_store import get_all_pipeline_lineage, get_lineage_summary, get_pipeline_lineage
 from .status_store import get_all_statuses, get_pipeline_status
 
@@ -150,6 +154,82 @@ def _resource_detail(resource_id: str) -> dict:
     return _response(200, {**node, "pipelines": pipelines, "upstream": upstream, "downstream": downstream})
 
 
+def _application_detail(application_id: str) -> dict:
+    summary = get_application_summary(TABLE_NAME, application_id)
+    if summary is None:
+        return _response(404, {"error": f"application {application_id!r} not found"})
+
+    resources = get_all_application_resources(TABLE_NAME, application_id)
+    inventory = []
+    edges = []
+    for item in resources:
+        inventory.append({
+            "resource_id": item["resource_id"],
+            "resource_type": item["resource_type"],
+            "display_name": item["display_name"],
+            "region": item.get("region"),
+        })
+        for rel in item.get("downstream", []):
+            edges.append({
+                "source_id": item["resource_id"],
+                "target_id": rel["resource_id"],
+                "relationship_type": rel["relationship_type"],
+                "relationship_source": rel["relationship_source"],
+            })
+
+    body = {k: v for k, v in summary.items() if k != "pipeline_name"}
+    body["resources"] = inventory
+    body["edges"] = edges
+    return _response(200, body)
+
+
+def _compute_impact(resource_id: str, all_resources: List[dict]) -> List[dict]:
+    """Full transitive downstream of one resource - everything that could be
+    affected if it broke or changed, not just its direct neighbors. Bounded
+    BFS depth as a safety cap against a cyclic/malformed graph; trivial cost
+    at this pilot's ~35-resource scale either way.
+    """
+    by_id = {item["resource_id"]: item for item in all_resources}
+    visited = {resource_id}
+    frontier = [resource_id]
+    impact: List[dict] = []
+    depth = 0
+    while frontier and depth < 20:
+        next_frontier = []
+        for rid in frontier:
+            item = by_id.get(rid)
+            if item is None:
+                continue
+            for rel in item.get("downstream", []):
+                target_id = rel["resource_id"]
+                if target_id in visited:
+                    continue
+                visited.add(target_id)
+                target_item = by_id.get(target_id)
+                impact.append({
+                    "resource_id": target_id,
+                    "resource_type": target_item["resource_type"] if target_item else None,
+                    "display_name": target_item["display_name"] if target_item else target_id,
+                    "relationship_type": rel["relationship_type"],
+                    "hops": depth + 1,
+                })
+                next_frontier.append(target_id)
+        frontier = next_frontier
+        depth += 1
+    return impact
+
+
+def _application_resource_detail(application_id: str, resource_id: str) -> dict:
+    all_resources = get_all_application_resources(TABLE_NAME, application_id)
+    item = next((r for r in all_resources if r["resource_id"] == resource_id), None)
+    if item is None:
+        return _response(404, {"error": f"resource {resource_id!r} not found in application {application_id!r}"})
+
+    body = {k: v for k, v in item.items() if k != "pipeline_name"}
+    body["impact"] = _compute_impact(resource_id, all_resources)
+    return _response(200, body)
+
+
 def _handle(event) -> dict:
     route_key = event.get("routeKey", "")
     path_params = event.get("pathParameters") or {}
@@ -166,6 +246,10 @@ def _handle(event) -> dict:
         return _resource_detail(path_params["arn"])
     if route_key == "GET /resources":
         return _resources_list()
+    if route_key == "GET /applications/{id}/resources/{resource_id+}":
+        return _application_resource_detail(path_params["id"], path_params["resource_id"])
+    if route_key == "GET /applications/{id}":
+        return _application_detail(path_params["id"])
 
     return _response(404, {"error": f"no route for {route_key!r}"})
 

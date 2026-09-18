@@ -1,0 +1,39 @@
+# Application Dependency tab - pilot scope, ONE application only.
+#
+# This is a manual allow-list, and deliberately so: unlike pipeline
+# discovery (which auto-discovers every Step Function in the account -
+# see handler.py), which CloudFormation stacks count as "our team's
+# applications" is a human decision that AWS tags can't make for us - this
+# account has no `Application` tag in use anywhere (confirmed via a live,
+# read-only check), and the account itself is shared across many unrelated
+# teams' and individuals' projects. Nothing outside this list is ever
+# scanned or shown, regardless of what discovery could technically reach.
+#
+# Each `stack_name` was confirmed via a real `aws:cloudformation:stack-name`
+# tag read directly off the state machine (states:ListTagsForResource),
+# not guessed from naming - see the pilot's planning notes for the full
+# verification. Only `data-exporter` is enabled for the pilot; the other
+# confirmed-but-not-yet-built applications are listed here as documentation
+# of what was verified, commented out, not as scanned entries.
+
+applications:
+  - id: data-exporter
+    stack_name: data-exporter
+    display_name: Data Exporter
+
+# Confirmed via the same real tag-based verification, not yet piloted:
+#   - id: rds-snapshot-exporter
+#     stack_name: rds-snapshot-exporter
+#   - id: tp-apps-data
+#     stack_name: tp-apps-data
+#   - id: leadgen-export-v2
+#     stack_name: version2-athiva-leadgen-dynamodb-export-s3
+#   - id: leadgen-export-v3
+#     stack_name: version3-athiva-leadgen-dynamodb-full-export-s3
+#   - id: leadgen-export-dev
+#     stack_name: lhg-dev-stepfunctions-dynamodb-export-s3-multi-eventsrule
+#
+# Explicitly excluded, not "not yet added": CidDataCollectionStack and its
+# module sub-stacks (CID-DC-*) - AWS's own packaged Cost Intelligence
+# Dashboard solution, already excluded from pipeline monitoring for the
+# same reason.

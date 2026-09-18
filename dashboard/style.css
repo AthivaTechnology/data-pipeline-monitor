@@ -93,6 +93,7 @@ a:hover { text-decoration: underline; }
 .lineage-chip-lambda, .lineage-chip-athena, .lineage-chip-glue { background: var(--delayed-bg); color: var(--delayed); }
 .lineage-chip-s3, .lineage-chip-dynamodb, .lineage-chip-firehose, .lineage-chip-kinesis { background: var(--fresh-bg); color: var(--fresh); }
 .lineage-chip-sns, .lineage-chip-sqs { background: var(--stale-bg); color: var(--stale); }
+.lineage-chip-iam_role, .lineage-chip-cloudwatch_alarm { background: var(--neutral-bg); color: var(--neutral); }
 
 /* ---------- Breadcrumbs ---------- */
 .breadcrumbs { font-size: 12.5px; color: var(--text-muted); margin-bottom: 14px; }

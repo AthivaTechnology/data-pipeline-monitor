@@ -89,6 +89,7 @@ def build_pipeline_graph(
         edges.append(LineageEdge(
             source_id=eb_node.resource_id, target_id=sm_node.resource_id,
             relationship_source=trigger_detail["label"], confidence=Confidence.DIRECT.value,
+            relationship_type="starts",
         ))
 
     states = _parse_states(definition)
@@ -161,6 +162,12 @@ def _walk(
                 source_id=current_predecessor_id, target_id=node_id,
                 relationship_source=f"ASL Task '{state_name}' calls this resource, reached from {current_predecessor_label}",
                 confidence=Confidence.DIRECT.value,
+                # "invokes" is broadly accurate for every Task type this
+                # scanner classifies (Lambda invoke, Glue job start, SNS
+                # publish, etc.) - a more specific verb per resource type
+                # (e.g. "publishes_to" for SNS) is a reasonable future
+                # refinement, not attempted in this pass.
+                relationship_type="invokes",
             ))
             current_predecessor_id = node_id
             current_predecessor_label = f"Task '{state_name}'"

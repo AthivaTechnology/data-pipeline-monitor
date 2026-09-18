@@ -38,6 +38,13 @@ class LineageEdge:
     target_id: str
     relationship_source: str  # human-readable evidence, e.g. "ASL Task resource in state 'ExportToS3'"
     confidence: str = Confidence.DIRECT.value
+    # A verb describing *how* source relates to target - "starts", "invokes",
+    # "triggered_by", "reads_from", "writes_to", "publishes_to",
+    # "consumes_from", "routes_to", or the generic "depends_on" default for
+    # edges where a more specific verb hasn't been assigned yet. Separate
+    # from `confidence`/evidence: this says what kind of relationship it is,
+    # not how sure we are it's real.
+    relationship_type: str = "depends_on"
 
 
 @dataclass(frozen=True)

@@ -205,3 +205,76 @@ def test_resource_detail_not_found_returns_404():
         response = api_handler.lambda_handler({"routeKey": "GET /resources/{arn+}", "pathParameters": {"arn": "arn:missing"}}, None)
 
     assert response["statusCode"] == 404
+
+
+# ---------------- Application Dependency pilot ----------------
+
+
+def test_application_detail_found():
+    summary = {
+        "pipeline_name": "APP#data-exporter", "application_id": "data-exporter",
+        "display_name": "Data Exporter", "total_resources": 2, "total_relationships": 1,
+    }
+    resources = [
+        {
+            "pipeline_name": "APPRESOURCE#data-exporter#arn:sm", "resource_id": "arn:sm",
+            "resource_type": "step_function", "display_name": "data_exporter_pipeline", "region": "us-east-1",
+            "upstream": [], "downstream": [{"resource_id": "arn:fn", "relationship_type": "invokes", "relationship_source": "task"}],
+        },
+        {
+            "pipeline_name": "APPRESOURCE#data-exporter#arn:fn", "resource_id": "arn:fn",
+            "resource_type": "lambda", "display_name": "fn", "region": "us-east-1",
+            "upstream": [{"resource_id": "arn:sm", "relationship_type": "invokes", "relationship_source": "task"}], "downstream": [],
+        },
+    ]
+    with patch.object(api_handler, "TABLE_NAME", "test-table"), \
+         patch.object(api_handler, "get_application_summary", return_value=summary), \
+         patch.object(api_handler, "get_all_application_resources", return_value=resources):
+        response = api_handler.lambda_handler({"routeKey": "GET /applications/{id}", "pathParameters": {"id": "data-exporter"}}, None)
+
+    import json
+    body = json.loads(response["body"])
+    assert response["statusCode"] == 200
+    assert "pipeline_name" not in body
+    assert len(body["resources"]) == 2
+    assert body["edges"] == [{"source_id": "arn:sm", "target_id": "arn:fn", "relationship_type": "invokes", "relationship_source": "task"}]
+
+
+def test_application_detail_not_found_returns_404():
+    with patch.object(api_handler, "TABLE_NAME", "test-table"), \
+         patch.object(api_handler, "get_application_summary", return_value=None):
+        response = api_handler.lambda_handler({"routeKey": "GET /applications/{id}", "pathParameters": {"id": "missing-app"}}, None)
+
+    assert response["statusCode"] == 404
+
+
+def test_application_resource_detail_computes_transitive_impact():
+    # arn:sm -> arn:fn -> arn:bucket : arn:bucket should show up as impact
+    # of arn:sm two hops away, not just its direct downstream neighbor.
+    resources = [
+        {"resource_id": "arn:sm", "resource_type": "step_function", "display_name": "sm", "upstream": [], "downstream": [{"resource_id": "arn:fn", "relationship_type": "invokes", "relationship_source": "task"}]},
+        {"resource_id": "arn:fn", "resource_type": "lambda", "display_name": "fn", "upstream": [{"resource_id": "arn:sm", "relationship_type": "invokes", "relationship_source": "task"}], "downstream": [{"resource_id": "arn:bucket", "relationship_type": "writes_to", "relationship_source": "task"}]},
+        {"resource_id": "arn:bucket", "resource_type": "s3", "display_name": "bucket", "upstream": [{"resource_id": "arn:fn", "relationship_type": "writes_to", "relationship_source": "task"}], "downstream": []},
+    ]
+    with patch.object(api_handler, "TABLE_NAME", "test-table"), \
+         patch.object(api_handler, "get_all_application_resources", return_value=resources):
+        response = api_handler.lambda_handler(
+            {"routeKey": "GET /applications/{id}/resources/{resource_id+}", "pathParameters": {"id": "data-exporter", "resource_id": "arn:sm"}}, None
+        )
+
+    import json
+    body = json.loads(response["body"])
+    assert response["statusCode"] == 200
+    impact_ids = {(i["resource_id"], i["hops"]) for i in body["impact"]}
+    assert ("arn:fn", 1) in impact_ids
+    assert ("arn:bucket", 2) in impact_ids
+
+
+def test_application_resource_detail_not_found_returns_404():
+    with patch.object(api_handler, "TABLE_NAME", "test-table"), \
+         patch.object(api_handler, "get_all_application_resources", return_value=[]):
+        response = api_handler.lambda_handler(
+            {"routeKey": "GET /applications/{id}/resources/{resource_id+}", "pathParameters": {"id": "data-exporter", "resource_id": "arn:missing"}}, None
+        )
+
+    assert response["statusCode"] == 404
