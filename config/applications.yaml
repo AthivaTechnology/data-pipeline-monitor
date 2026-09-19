@@ -12,27 +12,30 @@
 # Each `stack_name` was confirmed via a real `aws:cloudformation:stack-name`
 # tag read directly off the state machine (states:ListTagsForResource),
 # not guessed from naming - see the pilot's planning notes for the full
-# verification. Only `data-exporter` is enabled for the pilot; the other
-# confirmed-but-not-yet-built applications are listed here as documentation
-# of what was verified, commented out, not as scanned entries.
+# verification. The data-exporter pilot proved the approach end-to-end
+# (44 resources, 42 relationships, verified live); all 6 confirmed
+# applications are now enabled.
 
 applications:
   - id: data-exporter
     stack_name: data-exporter
     display_name: Data Exporter
+  - id: rds-snapshot-exporter
+    stack_name: rds-snapshot-exporter
+    display_name: RDS Snapshot Exporter
+  - id: tp-apps-data
+    stack_name: tp-apps-data
+    display_name: TP Apps Data
+  - id: leadgen-export-v2
+    stack_name: version2-athiva-leadgen-dynamodb-export-s3
+    display_name: Lead Gen Export v2
+  - id: leadgen-export-v3
+    stack_name: version3-athiva-leadgen-dynamodb-full-export-s3
+    display_name: Lead Gen Export v3
+  - id: leadgen-export-dev
+    stack_name: lhg-dev-stepfunctions-dynamodb-export-s3-multi-eventsrule
+    display_name: Lead Gen Export (Dev)
 
-# Confirmed via the same real tag-based verification, not yet piloted:
-#   - id: rds-snapshot-exporter
-#     stack_name: rds-snapshot-exporter
-#   - id: tp-apps-data
-#     stack_name: tp-apps-data
-#   - id: leadgen-export-v2
-#     stack_name: version2-athiva-leadgen-dynamodb-export-s3
-#   - id: leadgen-export-v3
-#     stack_name: version3-athiva-leadgen-dynamodb-full-export-s3
-#   - id: leadgen-export-dev
-#     stack_name: lhg-dev-stepfunctions-dynamodb-export-s3-multi-eventsrule
-#
 # Explicitly excluded, not "not yet added": CidDataCollectionStack and its
 # module sub-stacks (CID-DC-*) - AWS's own packaged Cost Intelligence
 # Dashboard solution, already excluded from pipeline monitoring for the

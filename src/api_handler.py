@@ -6,6 +6,7 @@ GET /lineage             -> lineage discovery summary (counts, last run)
 GET /lineage/{name}      -> one pipeline's lineage graph (nodes + edges)
 GET /resources           -> deduped catalog of every discovered AWS resource
 GET /resources/{arn+}    -> one resource's detail + upstream/downstream
+GET /applications                              -> every configured application's summary (counts, last run)
 GET /applications/{id}                        -> one application's summary + full resource inventory + edges
 GET /applications/{id}/resources/{resource_id+} -> one resource's detail, upstream/downstream, and
                                                     computed "impact" (full transitive downstream)
@@ -22,7 +23,7 @@ import logging
 import os
 from typing import Any, Dict, List
 
-from .application_store import get_all_application_resources, get_application_summary
+from .application_store import get_all_application_resources, get_all_application_summaries, get_application_summary
 from .lineage_store import get_all_pipeline_lineage, get_lineage_summary, get_pipeline_lineage
 from .status_store import get_all_statuses, get_pipeline_status
 
@@ -154,6 +155,15 @@ def _resource_detail(resource_id: str) -> dict:
     return _response(200, {**node, "pipelines": pipelines, "upstream": upstream, "downstream": downstream})
 
 
+def _applications_list() -> dict:
+    items = get_all_application_summaries(TABLE_NAME)
+    applications = sorted(
+        ({k: v for k, v in item.items() if k != "pipeline_name"} for item in items),
+        key=lambda a: a.get("display_name") or a.get("application_id") or "",
+    )
+    return _response(200, {"total": len(applications), "applications": applications})
+
+
 def _application_detail(application_id: str) -> dict:
     summary = get_application_summary(TABLE_NAME, application_id)
     if summary is None:
@@ -250,6 +260,8 @@ def _handle(event) -> dict:
         return _application_resource_detail(path_params["id"], path_params["resource_id"])
     if route_key == "GET /applications/{id}":
         return _application_detail(path_params["id"])
+    if route_key == "GET /applications":
+        return _applications_list()
 
     return _response(404, {"error": f"no route for {route_key!r}"})
 

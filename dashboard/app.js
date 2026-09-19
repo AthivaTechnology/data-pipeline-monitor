@@ -248,6 +248,15 @@ const Api = {
     return data;
   },
 
+  async fetchApplications() {
+    const res = await fetch(`${API_BASE}/applications`, { cache: "no-store" });
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch (e) { throw new Error("API returned invalid JSON"); }
+    if (!res.ok) throw new Error(data.error || data.message || `HTTP ${res.status}`);
+    return data;
+  },
+
   async fetchApplication(id) {
     const res = await fetch(`${API_BASE}/applications/${encodeURIComponent(id)}`, { cache: "no-store" });
     const text = await res.text();
@@ -279,6 +288,7 @@ const ROUTES = [
   { pattern: /^#\/lineage\/?$/, view: "lineage", nav: "lineage" },
   { pattern: /^#\/lineage\/catalog\/?$/, view: "catalog", nav: "lineage" },
   { pattern: /^#\/lineage\/resource\/([^/]+)\/?$/, view: "resourceDetail", params: ["id"], nav: "lineage" },
+  { pattern: /^#\/applications\/?$/, view: "applications", nav: "lineage" },
   { pattern: /^#\/applications\/([^/]+)\/?$/, view: "applicationDetail", params: ["id"], nav: "lineage" },
   { pattern: /^#\/applications\/([^/]+)\/resource\/([^/]+)\/?$/, view: "applicationResourceDetail", params: ["id", "resourceId"], nav: "lineage" },
   { pattern: /^#\/settings\/monitoring\/?$/, view: "settingsMonitoring", nav: "settings" },

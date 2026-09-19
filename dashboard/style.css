@@ -94,6 +94,39 @@ a:hover { text-decoration: underline; }
 .lineage-chip-s3, .lineage-chip-dynamodb, .lineage-chip-firehose, .lineage-chip-kinesis { background: var(--fresh-bg); color: var(--fresh); }
 .lineage-chip-sns, .lineage-chip-sqs { background: var(--stale-bg); color: var(--stale); }
 .lineage-chip-iam_role, .lineage-chip-cloudwatch_alarm { background: var(--neutral-bg); color: var(--neutral); }
+.lineage-chip.clickable { cursor: pointer; }
+.lineage-chip.clickable:hover { filter: brightness(0.95); }
+.lineage-chip.clickable:focus-visible { outline: 2px solid var(--running); outline-offset: 2px; }
+
+/* ---------- Dependency graph (SVG node-link diagram) ----------
+   Node fill colors reuse the exact same resource-type mapping as the
+   .lineage-chip-* rules above, one palette for the table and the diagram. */
+.graph-legend { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 14px; font-size: 12.5px; color: var(--text-muted); }
+.graph-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.graph-legend-swatch { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+.graph-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--card); padding: 8px; }
+.dependency-graph-svg { display: block; }
+.graph-edge { fill: none; stroke: var(--border-strong, #b7bec7); stroke-width: 2px; stroke-linecap: round; }
+.graph-edge-back { stroke: var(--stale); stroke-dasharray: 5 4; }
+.graph-arrow-head { fill: var(--border-strong, #b7bec7); }
+.graph-arrow-head-back { fill: var(--stale); }
+.graph-node-group { cursor: pointer; }
+.graph-node-group:focus-visible .graph-node { outline: 2px solid var(--running); outline-offset: 2px; }
+.graph-node-group:hover .graph-node { filter: brightness(0.93); }
+.graph-node-label { fill: #fff; font-size: 11px; font-weight: 600; pointer-events: none; }
+.graph-node.graph-node-step_function, .graph-legend-swatch.graph-node-step_function { fill: var(--total); background: var(--total); }
+.graph-node.graph-node-eventbridge, .graph-legend-swatch.graph-node-eventbridge { fill: var(--running); background: var(--running); }
+.graph-node.graph-node-lambda, .graph-legend-swatch.graph-node-lambda,
+.graph-node.graph-node-athena, .graph-legend-swatch.graph-node-athena,
+.graph-node.graph-node-glue, .graph-legend-swatch.graph-node-glue { fill: var(--delayed); background: var(--delayed); }
+.graph-node.graph-node-s3, .graph-legend-swatch.graph-node-s3,
+.graph-node.graph-node-dynamodb, .graph-legend-swatch.graph-node-dynamodb,
+.graph-node.graph-node-firehose, .graph-legend-swatch.graph-node-firehose,
+.graph-node.graph-node-kinesis, .graph-legend-swatch.graph-node-kinesis { fill: var(--fresh); background: var(--fresh); }
+.graph-node.graph-node-sns, .graph-legend-swatch.graph-node-sns,
+.graph-node.graph-node-sqs, .graph-legend-swatch.graph-node-sqs { fill: var(--stale); background: var(--stale); }
+.graph-node.graph-node-iam_role, .graph-legend-swatch.graph-node-iam_role,
+.graph-node.graph-node-cloudwatch_alarm, .graph-legend-swatch.graph-node-cloudwatch_alarm { fill: var(--neutral); background: var(--neutral); }
 
 /* ---------- Breadcrumbs ---------- */
 .breadcrumbs { font-size: 12.5px; color: var(--text-muted); margin-bottom: 14px; }
@@ -111,6 +144,8 @@ a:hover { text-decoration: underline; }
 .btn-primary:hover { background: #1a7f37; }
 .btn:disabled { opacity: 0.55; cursor: default; }
 .btn-primary:disabled { background: #94d3a2; border-color: #94d3a2; }
+.btn-active { background: var(--running); color: #fff; border-color: var(--running); }
+.btn-active:hover { background: var(--running); }
 
 /* ---------- Hero (Home) ---------- */
 .hero {

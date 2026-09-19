@@ -1,4 +1,4 @@
-"""DynamoDB persistence for the Application Dependency pilot - reuses the
+"""DynamoDB persistence for Application Dependency discovery - reuses the
 SAME table as status_store.py and lineage_store.py, not a new table.
 
 Mirrors lineage_store.py's namespacing approach with two more prefixes:
@@ -59,12 +59,25 @@ def get_application_resource(table_name: str, application_id: str, resource_id: 
 def get_all_application_resources(table_name: str, application_id: str) -> List[Dict[str, Any]]:
     """Every resource item for one application. Same Scan-with-begins_with
     pattern as lineage_store.get_all_pipeline_lineage, at the same small
-    scale (~35 items for this pilot's one application).
+    scale (~35-45 items per application).
     """
     prefix = f"{APPLICATION_RESOURCE_PREFIX}{application_id}#"
     response = _table(table_name).scan(
         FilterExpression="begins_with(pipeline_name, :prefix)",
         ExpressionAttributeValues={":prefix": prefix},
+    )
+    return response.get("Items", [])
+
+
+def get_all_application_summaries(table_name: str) -> List[Dict[str, Any]]:
+    """Every application's summary item (one per config/applications.yaml
+    entry that has completed at least one discovery run) - for the
+    applications list page. Filtering on the literal "APP#" prefix never
+    matches an "APPRESOURCE#..." item: their 4th character is "R", not "#".
+    """
+    response = _table(table_name).scan(
+        FilterExpression="begins_with(pipeline_name, :prefix)",
+        ExpressionAttributeValues={":prefix": APPLICATION_PREFIX},
     )
     return response.get("Items", [])
 

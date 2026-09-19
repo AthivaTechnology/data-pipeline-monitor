@@ -207,7 +207,35 @@ def test_resource_detail_not_found_returns_404():
     assert response["statusCode"] == 404
 
 
-# ---------------- Application Dependency pilot ----------------
+# ---------------- Application Dependency ----------------
+
+
+def test_applications_list_happy_path_sorted_by_display_name():
+    summaries = [
+        {"pipeline_name": "APP#tp-apps-data", "application_id": "tp-apps-data", "display_name": "TP Apps Data", "total_resources": 10},
+        {"pipeline_name": "APP#data-exporter", "application_id": "data-exporter", "display_name": "Data Exporter", "total_resources": 44},
+    ]
+    with patch.object(api_handler, "TABLE_NAME", "test-table"), \
+         patch.object(api_handler, "get_all_application_summaries", return_value=summaries):
+        response = api_handler.lambda_handler({"routeKey": "GET /applications", "pathParameters": None}, None)
+
+    import json
+    body = json.loads(response["body"])
+    assert response["statusCode"] == 200
+    assert body["total"] == 2
+    assert [a["display_name"] for a in body["applications"]] == ["Data Exporter", "TP Apps Data"]
+    assert "pipeline_name" not in body["applications"][0]
+
+
+def test_applications_list_empty_when_no_discovery_has_run():
+    with patch.object(api_handler, "TABLE_NAME", "test-table"), \
+         patch.object(api_handler, "get_all_application_summaries", return_value=[]):
+        response = api_handler.lambda_handler({"routeKey": "GET /applications", "pathParameters": None}, None)
+
+    import json
+    body = json.loads(response["body"])
+    assert response["statusCode"] == 200
+    assert body == {"total": 0, "applications": []}
 
 
 def test_application_detail_found():

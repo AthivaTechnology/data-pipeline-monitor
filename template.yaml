@@ -52,9 +52,9 @@ Resources:
       Handler: src.handler.lambda_handler
       Description: >
         Collects Step Functions state and writes freshness status to DynamoDB
-        (every 15 min). Also runs AWS resource lineage discovery and, for the
-        data-exporter pilot, application dependency discovery once a day
-        each, mode-dispatched - see src/handler.py.
+        (every 15 min). Also runs AWS resource lineage discovery and
+        application dependency discovery (config/applications.yaml) once a
+        day each, mode-dispatched - see src/handler.py.
       Environment:
         Variables:
           STATUS_TABLE_NAME: !Ref PipelineStatusTable
@@ -90,8 +90,8 @@ Resources:
             # they do land at the same moment, both simply invoke
             # MonitorFunction concurrently, same as any two schedules would.
             Description: >
-              Runs the Application Dependency pilot's discovery (config/applications.yaml)
-              once a day.
+              Runs Application Dependency discovery for every application in
+              config/applications.yaml once a day.
             Schedule: rate(1 day)
             Enabled: true
             Input: '{"mode": "applications"}'
@@ -136,29 +136,35 @@ Resources:
                 - scheduler:ListSchedules
                 - scheduler:GetSchedule
               Resource: "*"
-            # ---- Application Dependency pilot (data-exporter only, read-only) ----
-            # Deliberately scoped to this one named, already-confirmed stack -
-            # never account-wide. See config/applications.yaml and
+            # ---- Application Dependency (named, already-confirmed applications only, read-only) ----
+            # Deliberately scoped to this named list of stacks - never
+            # account-wide. See config/applications.yaml and
             # src/application_scanner.py. No lambda:List*/glue:*/states:
             # ListTagsForResource or other enumeration permission is granted:
-            # none is needed once scoped to a single stack's own resource
-            # list (cloudformation:ListStackResources already returns every
+            # none is needed once scoped to each stack's own resource list
+            # (cloudformation:ListStackResources already returns every
             # resource in it).
-            - Sid: DescribeDataExporterApplicationStack
+            - Sid: DescribeApplicationDependencyStacks
               Effect: Allow
               Action:
                 - cloudformation:DescribeStacks
                 - cloudformation:ListStackResources
-              Resource: "arn:aws:cloudformation:us-east-1:382625484581:stack/data-exporter/*"
-            - Sid: DescribeDataExporterEventBridgeTargets
+              Resource:
+                - "arn:aws:cloudformation:us-east-1:382625484581:stack/data-exporter/*"
+                - "arn:aws:cloudformation:us-east-1:382625484581:stack/rds-snapshot-exporter/*"
+                - "arn:aws:cloudformation:us-east-1:382625484581:stack/tp-apps-data/*"
+                - "arn:aws:cloudformation:us-east-1:382625484581:stack/version2-athiva-leadgen-dynamodb-export-s3/*"
+                - "arn:aws:cloudformation:us-east-1:382625484581:stack/version3-athiva-leadgen-dynamodb-full-export-s3/*"
+                - "arn:aws:cloudformation:us-east-1:382625484581:stack/lhg-dev-stepfunctions-dynamodb-export-s3-multi-eventsrule/*"
+            - Sid: DescribeApplicationDependencyEventBridgeTargets
               Effect: Allow
               Action:
                 - events:ListTargetsByRule
               # Individual rule names aren't known until ListStackResources
-              # runs above, so this can't be pinned to one specific rule ARN -
+              # runs above, so this can't be pinned to specific rule ARNs -
               # but region+account CAN be fixed regardless of which rule,
               # since every rule this function will ever query belongs to
-              # the data-exporter stack in this one account/region. Narrower
+              # one of the stacks above, in this one account/region. Narrower
               # than a bare "*", unlike this template's older events:*
               # statements (DiscoverTriggersForStepFunctions above), which
               # predate this scoping and are intentionally left as-is here.
@@ -207,6 +213,11 @@ Resources:
             # (e.g. an S3 object ARN), which a plain {arn} path variable
             # would truncate at.
             Path: /resources/{arn+}
+            Method: GET
+        GetApplicationsList:
+          Type: HttpApi
+          Properties:
+            Path: /applications
             Method: GET
         GetApplicationDetail:
           Type: HttpApi

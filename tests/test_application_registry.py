@@ -1,12 +1,14 @@
 from src.application_registry import load_applications
 
 
-def test_real_config_has_exactly_the_pilot_application():
+def test_real_config_has_all_six_confirmed_applications():
     apps = load_applications()
-    assert len(apps) == 1
-    assert apps[0].id == "data-exporter"
-    assert apps[0].stack_name == "data-exporter"
-    assert apps[0].display_name == "Data Exporter"
+    by_id = {a.id: a for a in apps}
+    assert len(apps) == 6
+    assert by_id["data-exporter"].stack_name == "data-exporter"
+    assert by_id["data-exporter"].display_name == "Data Exporter"
+    assert by_id["leadgen-export-v2"].stack_name == "version2-athiva-leadgen-dynamodb-export-s3"
+    assert by_id["leadgen-export-dev"].stack_name == "lhg-dev-stepfunctions-dynamodb-export-s3-multi-eventsrule"
 
 
 def test_missing_file_behaves_like_empty(tmp_path):

@@ -65,7 +65,14 @@
         <h3>Confirmed Dependencies</h3>
         ${allEdges.length === 0
           ? `<div class="reason-box">No direct relationships were confirmed between this application's resources.</div>`
-          : renderEdgesTable()}
+          : `
+            <div class="controls-row">
+              <button class="btn" id="app-view-table" type="button">Table</button>
+              <button class="btn" id="app-view-graph" type="button">Graph</button>
+              <span class="spacer"></span>
+            </div>
+            <div id="app-dependencies-view"></div>
+          `}
       </div>
     `;
 
@@ -73,6 +80,26 @@
       document.getElementById("app-search").addEventListener("input", renderInventoryTable);
       document.getElementById("app-type-filter").addEventListener("change", renderInventoryTable);
       renderInventoryTable();
+    }
+
+    if (allEdges.length > 0) {
+      document.getElementById("app-view-table").addEventListener("click", () => showDependenciesView("table"));
+      document.getElementById("app-view-graph").addEventListener("click", () => showDependenciesView("graph"));
+      showDependenciesView("table");
+    }
+  }
+
+  function showDependenciesView(mode) {
+    document.getElementById("app-view-table").classList.toggle("btn-active", mode === "table");
+    document.getElementById("app-view-graph").classList.toggle("btn-active", mode === "graph");
+
+    const el = document.getElementById("app-dependencies-view");
+    if (mode === "graph") {
+      Views.renderDependencyGraph(el, allResources, allEdges, (resourceId) => {
+        location.hash = `#/applications/${encodeURIComponent(appId)}/resource/${encodeURIComponent(resourceId)}`;
+      });
+    } else {
+      el.innerHTML = renderEdgesTable();
     }
   }
 

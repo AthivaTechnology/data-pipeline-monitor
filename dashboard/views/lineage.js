@@ -58,7 +58,7 @@
           ${pipelineNames.map((n) => `<option value="${Utils.escapeHtml(n)}">${Utils.escapeHtml(n)}</option>`).join("")}
         </select>
         <a class="btn" href="#/lineage/catalog">Browse full resource catalog →</a>
-        <a class="btn" href="#/applications/data-exporter">Application Dependency pilot: data-exporter →</a>
+        <a class="btn" href="#/applications">Application Dependency →</a>
         <span class="spacer"></span>
       </div>
 
