@@ -14,7 +14,10 @@ const EXEC_META = {
   stale:      { label: "Stale",      cls: "stale" },
   running:    { label: "Running",    cls: "running" },
   never_run:  { label: "Never Run",  cls: "never_run" },
-  unknown:    { label: "Unknown",    cls: "unknown" },
+  // "Status Unavailable", not "Unknown": this bucket means the monitor
+  // genuinely could not determine execution health automatically (see
+  // freshness.py), and every row carries the specific reason.
+  unknown:    { label: "Status Unavailable", cls: "unknown" },
 };
 const DATA_META = {
   fresh:                       { label: "Fresh",                cls: "fresh" },
@@ -42,9 +45,11 @@ const STATUS_EXPLANATIONS = {
   unknown: "The monitor could not reliably determine the status.",
 };
 const SUMMARY_ORDER = ["fresh", "delayed", "failed", "stale", "running", "never_run", "unknown"];
+// Donut-legend labels - kept identical to the summary cards' labels in
+// pipelineMonitor.js so the same number never appears under two names.
 const SUMMARY_LABELS = {
-  fresh: "Healthy / Fresh", delayed: "Delayed", failed: "Failed", stale: "Stale",
-  running: "Running", never_run: "Never Run", unknown: "Configuration Issues",
+  fresh: "Healthy", delayed: "Delayed", failed: "Failed", stale: "Stale",
+  running: "Running", never_run: "Never Run", unknown: "Status Unavailable",
 };
 
 // Shared brand mark + a small set of general-purpose icons reused across

@@ -7,8 +7,6 @@
   --running: #0969da; --running-bg: #ddf4ff;
   --neutral: #57606a; --neutral-bg: #eef0f2;
   --config: #bc4c00; --config-bg: #fff1e5;
-  --needs_review: #0891b2; --needs_review-bg: #e0f7fa;
-  --needs_attention: #b91c1c; --needs_attention-bg: #fee2e2;
   --accent: #1f883d;
 
   --bg: #f6f8fa; --card: #ffffff; --border: #d0d7de;
@@ -270,8 +268,6 @@ a:hover { text-decoration: underline; }
 .card.c-running { --bar: var(--running); --tint: var(--running-bg); }
 .card.c-never_run { --bar: var(--neutral); --tint: var(--neutral-bg); }
 .card.c-unknown { --bar: var(--config); --tint: var(--config-bg); }
-.card.c-needs_review { --bar: var(--needs_review); --tint: var(--needs_review-bg); }
-.card.c-needs_attention { --bar: var(--needs_attention); --tint: var(--needs_attention-bg); }
 
 .active-filter-chip {
   display: inline-flex; align-items: center; gap: 8px; background: var(--card);

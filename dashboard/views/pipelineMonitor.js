@@ -20,15 +20,7 @@
     never_run: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>',
     unknown: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4.5"/><circle cx="12" cy="16" r="0.6" fill="currentColor" stroke="none"/></svg>',
     needs_review: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>',
-    needs_attention: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><circle cx="12" cy="16.3" r="0.6" fill="currentColor" stroke="none"/><path d="M10.3 3.9L2.5 18a1.6 1.6 0 0 0 1.4 2.4h16.2a1.6 1.6 0 0 0 1.4-2.4L13.7 3.9a1.6 1.6 0 0 0-2.8 0z"/></svg>',
   };
-
-  // Data-freshness statuses (see resource_scanner.py / data_freshness.py) that
-  // count toward "Needs Attention" alongside the execution-health ones -
-  // deliberately a separate list from _ATTENTION_EXECUTION_STATUSES below
-  // since these two enums are independent axes.
-  const _ATTENTION_EXECUTION_STATUSES = new Set(["failed", "delayed", "stale"]);
-  const _ATTENTION_DATA_STATUSES = new Set(["stale", "delayed", "source_detected_unavailable"]);
 
   // Hex values matching the CSS custom properties in style.css, needed here
   // because the donut chart's conic-gradient is built as an inline style
@@ -39,22 +31,35 @@
     running: "#0969da", never_run: "#57606a", unknown: "#bc4c00",
   };
 
-  // Defines every summary card: which pipelines it represents (a predicate
-  // over the already-fetched data, or null for "all") and its display info.
-  // Clicking a card sets the existing status-filter <select> to `statusValue`
-  // and re-renders from data already in memory - no new fetch, no new filter
-  // dimension, just reusing the filter machinery that already existed.
+  // Every summary card, in display order. Deliberately one card per
+  // mutually-exclusive execution_status value, plus Total - so the seven
+  // status cards partition the pipeline set exactly once and always sum to
+  // Total. Every count except Total comes straight from the backend's own
+  // _summarize() (see api_handler.py), which buckets by execution_status -
+  // nothing here re-derives or invents a count.
+  //
+  // Clicking a card sets the existing status-filter <select> to
+  // `statusValue` and re-renders from data already in memory - no new
+  // fetch, just the filter machinery that already existed.
+  //
+  // Earlier revisions also had Needs Review / Needs Attention /
+  // Configuration Issues cards. They were removed on purpose: the first two
+  // overlapped every other card by construction (review_status is an
+  // orthogonal axis, and "attention" was a union of the failed/delayed/
+  // stale cards plus a data-freshness condition), so the strip double- and
+  // triple-counted the same pipelines. The third was the same
+  // execution_status === "unknown" bucket this card set still shows,
+  // renamed to describe what it actually means. The per-pipeline
+  // review/reason detail behind them still appears at row and detail level.
   const CARD_DEFS = [
     { key: "total", statusValue: "", label: "Total Pipelines", icon: ICONS.total },
-    { key: "fresh", statusValue: "fresh", label: "Healthy / Fresh", icon: ICONS.fresh },
-    { key: "delayed", statusValue: "delayed", label: "Delayed", icon: ICONS.delayed },
+    { key: "fresh", statusValue: "fresh", label: "Healthy", icon: ICONS.fresh },
     { key: "failed", statusValue: "failed", label: "Failed", icon: ICONS.failed },
+    { key: "delayed", statusValue: "delayed", label: "Delayed", icon: ICONS.delayed },
     { key: "stale", statusValue: "stale", label: "Stale", icon: ICONS.stale },
     { key: "running", statusValue: "running", label: "Running", icon: ICONS.running },
     { key: "never_run", statusValue: "never_run", label: "Never Run", icon: ICONS.never_run },
-    { key: "unknown", statusValue: "unknown", label: "Configuration Issues", icon: ICONS.unknown },
-    { key: "needs_review", statusValue: "__needs_review__", label: "Needs Review", icon: ICONS.needs_review },
-    { key: "needs_attention", statusValue: "__needs_attention__", label: "Needs Attention", icon: ICONS.needs_attention },
+    { key: "unknown", statusValue: "unknown", label: "Status Unavailable", icon: ICONS.unknown },
   ];
 
   Views.pipelineMonitor = async function (container) {
@@ -82,8 +87,6 @@
             <select id="pm-status-filter">
               <option value="">All statuses</option>
               ${Object.entries(EXEC_META).map(([k, m]) => `<option value="${k}">${m.label}</option>`).join("")}
-              <option value="__needs_review__">Needs Review</option>
-              <option value="__needs_attention__">Needs Attention</option>
             </select>
             <span class="spacer"></span>
           </div>
@@ -187,18 +190,12 @@
     };
   }
 
-  function isNeedsAttention(p) {
-    return _ATTENTION_EXECUTION_STATUSES.has(p.execution_status) || _ATTENTION_DATA_STATUSES.has(p.data_status);
-  }
-
   function filteredPipelines() {
     const f = getFilters();
     return allPipelines.filter((p) => {
       if (f.search && !p.pipeline_name.toLowerCase().includes(f.search)) return false;
       if (f.env === _ENV_NOT_DETECTED && p.environment) return false;
       if (f.env && f.env !== _ENV_NOT_DETECTED && p.environment !== f.env) return false;
-      if (f.status === "__needs_review__") return p.review_status === "needs_review";
-      if (f.status === "__needs_attention__") return isNeedsAttention(p);
       if (f.status && p.execution_status !== f.status) return false;
       return true;
     });
@@ -232,11 +229,9 @@
     // filtering is a view of the table, not a re-scoping of "the truth".
     const currentStatus = getFilters().status;
     const cards = CARD_DEFS.map((def) => {
-      let count;
-      if (def.key === "total") count = allPipelines.length;
-      else if (def.key === "needs_review") count = allPipelines.filter((p) => p.review_status === "needs_review").length;
-      else if (def.key === "needs_attention") count = allPipelines.filter(isNeedsAttention).length;
-      else count = lastSummary[def.key] || 0;
+      // Total is the only count derived here; every status card reads the
+      // backend's own execution_status tally - see CARD_DEFS.
+      const count = def.key === "total" ? allPipelines.length : (lastSummary[def.key] || 0);
       const isActive = currentStatus === def.statusValue;
       return `
         <div class="card c-${def.key}${isActive ? " active" : ""}" onclick="Views._pipelineMonitorSelectCard('${def.statusValue}')">
@@ -387,15 +382,15 @@
     const insights = [];
     const neverRun = lastSummary.never_run || 0;
     const failed = lastSummary.failed || 0;
-    const configIssues = lastSummary.unknown || 0;
+    const statusUnavailable = lastSummary.unknown || 0;
     const needsReview = allPipelines.filter((p) => p.review_status === "needs_review").length;
     const envs = Array.from(new Set(allPipelines.map((p) => p.environment).filter(Boolean)));
 
     if (needsReview > 0) {
       insights.push({
         icon: ICONS.needs_review,
-        title: `${needsReview} auto-discovered pipeline${needsReview === 1 ? "" : "s"} awaiting review`,
-        desc: "Found via account-wide discovery but not yet in config/registry.yaml.",
+        title: `${needsReview} pipeline${needsReview === 1 ? "" : "s"} found by automatic discovery`,
+        desc: "Open a pipeline to see what could and couldn't be determined from AWS for it.",
       });
     }
     if (neverRun > 0) {
@@ -404,8 +399,12 @@
     if (failed > 0) {
       insights.push({ icon: ICONS.failed, title: `${failed} pipeline${failed === 1 ? "" : "s"} failed in their last execution`, desc: "Review logs for details." });
     }
-    if (configIssues > 0) {
-      insights.push({ icon: ICONS.unknown, title: `${configIssues} pipeline${configIssues === 1 ? "" : "s"} need configuration`, desc: "Schedule or grace period isn't fully set up." });
+    if (statusUnavailable > 0) {
+      insights.push({
+        icon: ICONS.unknown,
+        title: `${statusUnavailable} pipeline${statusUnavailable === 1 ? "" : "s"} with status unavailable`,
+        desc: "Execution health couldn't be determined automatically - each row shows the specific reason.",
+      });
     }
     if (envs.length === 1) {
       insights.push({ icon: ICONS.fresh, title: `All pipelines are in ${envs[0]} environment`, desc: "No other environments configured.", ok: true });

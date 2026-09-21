@@ -21,6 +21,66 @@ def test_status_list_happy_path():
     assert body["summary"]["never_run"] == 1
 
 
+# ---------------- Pipeline Monitor summary-card contract ----------------
+# The dashboard's 8 summary cards are Total plus one card per key below,
+# each reading its count straight from this summary (see CARD_DEFS in
+# dashboard/views/pipelineMonitor.js). These two tests pin that contract:
+# without them, changing _SUMMARY_KEYS would silently leave a card reading
+# a missing key as 0, or let pipelines fall outside every card.
+
+
+def test_summary_returns_exactly_the_keys_the_dashboard_cards_read():
+    items = [{"pipeline_name": "a", "execution_status": "fresh"}]
+    with patch.object(api_handler, "TABLE_NAME", "test-table"), \
+         patch.object(api_handler, "get_all_statuses", return_value=items):
+        response = api_handler.lambda_handler({"pathParameters": None}, None)
+
+    import json
+    body = json.loads(response["body"])
+    assert set(body["summary"].keys()) == {
+        "fresh", "delayed", "failed", "stale", "running", "never_run", "unknown",
+    }
+
+
+def test_every_pipeline_lands_in_exactly_one_summary_card():
+    # The seven status cards partition the pipeline set - their counts must
+    # sum to Total. (The old Needs Review / Needs Attention cards broke this
+    # on purpose: they re-counted pipelines already shown under another
+    # card, which is why they were removed.)
+    items = [
+        {"pipeline_name": "a", "execution_status": "fresh"},
+        {"pipeline_name": "b", "execution_status": "failed"},
+        {"pipeline_name": "c", "execution_status": "never_run"},
+        {"pipeline_name": "d", "execution_status": "unknown"},
+        {"pipeline_name": "e", "execution_status": "running"},
+        {"pipeline_name": "f", "execution_status": "delayed"},
+        {"pipeline_name": "g", "execution_status": "stale"},
+        {"pipeline_name": "h", "execution_status": "fresh"},
+    ]
+    with patch.object(api_handler, "TABLE_NAME", "test-table"), \
+         patch.object(api_handler, "get_all_statuses", return_value=items):
+        response = api_handler.lambda_handler({"pathParameters": None}, None)
+
+    import json
+    body = json.loads(response["body"])
+    assert sum(body["summary"].values()) == body["total_pipelines"] == 8
+    assert body["summary"]["fresh"] == 2
+
+
+def test_pipeline_with_no_execution_status_counts_as_status_unavailable():
+    # An item missing execution_status entirely must still land in a card
+    # (the "Status Unavailable" one), never vanish from the strip.
+    items = [{"pipeline_name": "a"}]
+    with patch.object(api_handler, "TABLE_NAME", "test-table"), \
+         patch.object(api_handler, "get_all_statuses", return_value=items):
+        response = api_handler.lambda_handler({"pathParameters": None}, None)
+
+    import json
+    body = json.loads(response["body"])
+    assert body["summary"]["unknown"] == 1
+    assert sum(body["summary"].values()) == body["total_pipelines"] == 1
+
+
 def test_status_detail_found():
     item = {"pipeline_name": "a", "execution_status": "fresh"}
     with patch.object(api_handler, "TABLE_NAME", "test-table"), \

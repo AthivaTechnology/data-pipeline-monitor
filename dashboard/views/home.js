@@ -23,7 +23,7 @@ Views.home = async function (container) {
   // number takes you to exactly the pipelines behind it, not just the page.
   const METRIC_DEFS = [
     { key: "total", label: "Total", cls: "mm-total", value: total, href: "#/pipeline-monitor" },
-    { key: "fresh", label: "Fresh", cls: "mm-fresh", value: s.fresh || 0, href: "#/pipeline-monitor?status=fresh" },
+    { key: "fresh", label: "Healthy", cls: "mm-fresh", value: s.fresh || 0, href: "#/pipeline-monitor?status=fresh" },
     { key: "failed", label: "Failed", cls: "mm-failed", value: s.failed || 0, href: "#/pipeline-monitor?status=failed" },
     { key: "delayed", label: "Delayed", cls: "mm-delayed", value: s.delayed || 0, href: "#/pipeline-monitor?status=delayed" },
     { key: "stale", label: "Stale", cls: "mm-stale", value: s.stale || 0, href: "#/pipeline-monitor?status=stale" },
