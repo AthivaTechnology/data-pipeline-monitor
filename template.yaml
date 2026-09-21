@@ -127,6 +127,14 @@ Resources:
                 - states:DescribeStateMachine
                 - states:ListExecutions
                 - states:DescribeExecution
+                # Read-only tag lookup, used to automatically detect a
+                # pipeline's deployment environment from a real AWS tag
+                # (Environment/Env/Stage) instead of requiring a human to
+                # set one in config/registry.yaml - see handler.py's
+                # _detect_environment. Same account-wide scope as the rest
+                # of this statement, for the same reason: discovery is
+                # account-wide, so this can't be pre-scoped to specific ARNs.
+                - states:ListTagsForResource
               Resource: "*"
             - Sid: DiscoverTriggersForStepFunctions
               Effect: Allow

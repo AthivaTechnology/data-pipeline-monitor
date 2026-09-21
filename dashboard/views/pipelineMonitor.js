@@ -161,14 +161,22 @@
     }
   }
 
+  // Sentinel for the env filter's "Not automatically detected" option -
+  // distinct from "" (All environments), since a real environment value can
+  // never equal this (environment is either a real AWS-derived string or
+  // null, never this literal).
+  const _ENV_NOT_DETECTED = "__env_not_detected__";
+
   function populateEnvFilter() {
     const select = document.getElementById("pm-env-filter");
     if (!select) return;
     const current = select.value;
     const envs = Array.from(new Set(allPipelines.map((p) => p.environment).filter(Boolean))).sort();
+    const hasUndetected = allPipelines.some((p) => !p.environment);
     select.innerHTML = `<option value="">All environments</option>` +
-      envs.map((e) => `<option value="${e}">${e === "unregistered" ? "Not specified" : e}</option>`).join("");
-    select.value = envs.includes(current) ? current : "";
+      envs.map((e) => `<option value="${Utils.escapeHtml(e)}">${Utils.escapeHtml(e)}</option>`).join("") +
+      (hasUndetected ? `<option value="${_ENV_NOT_DETECTED}">Not automatically detected</option>` : "");
+    select.value = (envs.includes(current) || current === _ENV_NOT_DETECTED) ? current : "";
   }
 
   function getFilters() {
@@ -187,7 +195,8 @@
     const f = getFilters();
     return allPipelines.filter((p) => {
       if (f.search && !p.pipeline_name.toLowerCase().includes(f.search)) return false;
-      if (f.env && p.environment !== f.env) return false;
+      if (f.env === _ENV_NOT_DETECTED && p.environment) return false;
+      if (f.env && f.env !== _ENV_NOT_DETECTED && p.environment !== f.env) return false;
       if (f.status === "__needs_review__") return p.review_status === "needs_review";
       if (f.status === "__needs_attention__") return isNeedsAttention(p);
       if (f.status && p.execution_status !== f.status) return false;
@@ -249,7 +258,7 @@
       const def = CARD_DEFS.find((d) => d.statusValue === f.status);
       parts.push(`Status: ${def ? def.label : f.status}`);
     }
-    if (f.env) parts.push(`Environment: ${f.env}`);
+    if (f.env) parts.push(`Environment: ${f.env === _ENV_NOT_DETECTED ? "Not automatically detected" : Utils.escapeHtml(f.env)}`);
     if (f.search) parts.push(`Search: "${Utils.escapeHtml(f.search)}"`);
 
     if (parts.length === 0) {
@@ -280,7 +289,7 @@
           <div class="pname">${Utils.escapeHtml(p.pipeline_name)} ${p.review_status === "needs_review" ? `<span class="badge badge-not_configured">${Utils.reviewStatusLabel(p)}</span>` : ""}</div>
           <div class="psub">${Utils.notAssigned(p.owner)}</div>
         </td>
-        <td class="nowrap">${Utils.envBadge(p.environment)}</td>
+        <td class="nowrap">${Utils.envBadge(p)}</td>
         <td>${Utils.badge(p.execution_status, EXEC_META)}<div class="reason" title="${Utils.escapeHtml(p.execution_reason || "")}">${p.execution_reason || ""}</div></td>
         <td>${Utils.badge(p.data_status, DATA_META)}<div class="reason" title="${Utils.escapeHtml(p.data_reason || "")}">${p.data_reason || ""}</div></td>
         <td class="nowrap">${Utils.fmtTime(p.last_successful_execution_at, "No successful run yet")}</td>

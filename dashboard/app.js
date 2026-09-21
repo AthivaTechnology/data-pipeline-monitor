@@ -162,12 +162,13 @@ const Utils = {
     return Utils.dash(p.review_status);
   },
 
-  envBadge(env) {
-    // "unregistered" means "auto-discovered, nobody has set an environment
-    // for it yet" - not an error state, so it gets plain muted text instead
-    // of a badge that would visually flag the row as broken/different.
-    if (!env || env === "unregistered") return `<span class="muted">Not specified</span>`;
-    return `<span class="badge badge-env">${Utils.escapeHtml(env)}</span>`;
+  // Takes the whole pipeline object (not just the env string) because a
+  // missing environment always needs its accompanying reason shown too -
+  // see handler.py's _detect_environment, which computes both together.
+  envBadge(p) {
+    if (p.environment) return `<span class="badge badge-env">${Utils.escapeHtml(p.environment)}</span>`;
+    const reason = p.environment_reason || "No environment could be automatically determined for this pipeline.";
+    return `<span class="muted" title="${Utils.escapeHtml(reason)}">Not automatically detected</span>`;
   },
 
   // Coarse, human "x ago" phrasing for the Recent Activity list - purely a

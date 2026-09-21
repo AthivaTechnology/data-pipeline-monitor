@@ -58,6 +58,20 @@ def list_all_state_machines(region: str) -> List[dict]:
     return machines
 
 
+def get_state_machine_tags(arn: str, region: str) -> Dict[str, str]:
+    """Real AWS tags on one state machine, as {key: value}. Returns {}
+    (never raises) on any failure or if the resource has no tags - callers
+    must treat an empty result as "nothing found", never as an error.
+    """
+    client = _get_client(region)
+    try:
+        response = client.list_tags_for_resource(resourceArn=arn)
+    except (ClientError, BotoCoreError) as exc:
+        logger.warning("list_tags_for_resource failed for %s: %s", arn, exc)
+        return {}
+    return {tag["key"]: tag["value"] for tag in response.get("tags", []) if "key" in tag}
+
+
 def describe_state_machine_details(arn: str, region: str) -> Optional[dict]:
     """Best-effort single describe_state_machine call, returning everything
     callers need from it: {definition, status} for resource_scanner.py and

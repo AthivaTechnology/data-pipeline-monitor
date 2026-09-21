@@ -39,7 +39,11 @@ class PipelineConfig:
     name: str
     state_machine_arn: str
     region: str
-    environment: str
+    # None means no deployment environment could be determined - either a
+    # human hasn't set one in config/registry.yaml, or (for an auto-discovered
+    # pipeline) no AWS tag indicated one. Never a guessed value - see
+    # `environment_reason` and handler.py's `_detect_environment`.
+    environment: Optional[str]
     monitoring_enabled: bool  # should the monitor collect/evaluate this pipeline at all
     alerting_enabled: bool  # should Slack alerts (Phase 6) ever fire for this pipeline
     owner: Optional[str]
@@ -55,6 +59,12 @@ class PipelineConfig:
     # of config/registry.yaml entirely until confirmed, rather than half-registered.
     review_status: str = "confirmed"
     contact: Optional[str] = None  # e.g. a Slack channel or email; None means genuinely unassigned
+    # Populated only when `environment` is None, for an auto-discovered
+    # pipeline - names exactly which AWS metadata was checked and why it
+    # wasn't enough, so the dashboard never shows a bare "not specified"
+    # with no explanation. Always None for a registry-backed pipeline (a
+    # human set the value directly, so there's nothing to explain).
+    environment_reason: Optional[str] = None
 
 
 @dataclass(frozen=True)

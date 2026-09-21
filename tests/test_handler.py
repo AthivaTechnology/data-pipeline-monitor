@@ -42,6 +42,37 @@ def _never_run_state(pipeline):
     return PipelineExecutionState(pipeline=pipeline, latest_execution=None, latest_successful_execution=None)
 
 
+# ---------------- Environment detection (_detect_environment) ----------------
+
+
+def test_detect_environment_finds_a_direct_environment_tag():
+    env, reason = handler._detect_environment({"Environment": "staging"})
+    assert env == "staging"
+    assert reason is None
+
+
+def test_detect_environment_checks_common_key_capitalizations():
+    for key in ["Environment", "environment", "Env", "env", "Stage", "stage"]:
+        env, reason = handler._detect_environment({key: "prod"})
+        assert env == "prod"
+        assert reason is None
+
+
+def test_detect_environment_no_tags_at_all_gives_a_specific_reason():
+    env, reason = handler._detect_environment({})
+    assert env is None
+    assert "no tags at all" in reason
+
+
+def test_detect_environment_unrelated_tags_names_them_in_the_reason():
+    tags = {"aws:cloudformation:stack-name": "data-exporter", "stateMachine:createdBy": "SAM"}
+    env, reason = handler._detect_environment(tags)
+    assert env is None
+    assert "aws:cloudformation:stack-name" in reason
+    assert "stateMachine:createdBy" in reason
+    assert "no tags at all" not in reason
+
+
 # ---------------- Registry-sourced pipelines (single unified loop) ----------------
 
 
@@ -267,6 +298,7 @@ def test_new_machine_with_no_registry_entry_writes_needs_review_item():
          patch.object(handler, "collect_pipeline_state", side_effect=_never_run_state), \
          patch.object(handler, "describe_state_machine_details", return_value=None), \
          patch.object(handler, "detect_trigger", return_value="Trigger not identified"), \
+         patch.object(handler, "get_state_machine_tags", return_value={}), \
          patch.object(handler, "put_pipeline_status", side_effect=lambda table, item: written.append(item)):
         result = handler.lambda_handler({}, None)
 
@@ -277,13 +309,51 @@ def test_new_machine_with_no_registry_entry_writes_needs_review_item():
     assert item["pipeline_name"] == "mystery_pipeline"
     assert item["source"] == "discovered"
     assert item["review_status"] == "needs_review"
-    assert item["environment"] == "unregistered"
+    assert item["environment"] is None
+    assert "no tags at all" in item["environment_reason"]
     assert item["execution_status"] == "never_run"
     assert item["data_status"] == "source_not_detected"
     assert item["detected_trigger"] == "Trigger not identified"
     assert item["detected_resources"] == []
     assert item["created_at"] == NOW.isoformat()
     assert item["state_machine_status"] is None
+
+
+def test_discovered_machine_uses_real_environment_tag_when_present():
+    written = []
+    with patch.object(handler, "TABLE_NAME", "test-table"), \
+         patch.object(handler, "load_registry", return_value=[]), \
+         patch.object(handler, "load_excluded_names", return_value=set()), \
+         patch.object(handler, "list_all_state_machines", return_value=[_machine("mystery_pipeline", DISCOVERED_ARN)]), \
+         patch.object(handler, "collect_pipeline_state", side_effect=_never_run_state), \
+         patch.object(handler, "describe_state_machine_details", return_value=None), \
+         patch.object(handler, "detect_trigger", return_value="Trigger not identified"), \
+         patch.object(handler, "get_state_machine_tags", return_value={"Environment": "prod"}), \
+         patch.object(handler, "put_pipeline_status", side_effect=lambda table, item: written.append(item)):
+        handler.lambda_handler({}, None)
+
+    item = written[0]
+    assert item["environment"] == "prod"
+    assert item["environment_reason"] is None
+
+
+def test_discovered_machine_with_unrelated_tags_names_them_in_the_reason():
+    written = []
+    with patch.object(handler, "TABLE_NAME", "test-table"), \
+         patch.object(handler, "load_registry", return_value=[]), \
+         patch.object(handler, "load_excluded_names", return_value=set()), \
+         patch.object(handler, "list_all_state_machines", return_value=[_machine("mystery_pipeline", DISCOVERED_ARN)]), \
+         patch.object(handler, "collect_pipeline_state", side_effect=_never_run_state), \
+         patch.object(handler, "describe_state_machine_details", return_value=None), \
+         patch.object(handler, "detect_trigger", return_value="Trigger not identified"), \
+         patch.object(handler, "get_state_machine_tags", return_value={"aws:cloudformation:stack-name": "data-exporter"}), \
+         patch.object(handler, "put_pipeline_status", side_effect=lambda table, item: written.append(item)):
+        handler.lambda_handler({}, None)
+
+    item = written[0]
+    assert item["environment"] is None
+    assert "aws:cloudformation:stack-name" in item["environment_reason"]
+    assert "no tags at all" not in item["environment_reason"]
 
 
 def test_discovered_pipeline_reports_detected_resources_when_output_is_unresolved():
@@ -303,6 +373,7 @@ def test_discovered_pipeline_reports_detected_resources_when_output_is_unresolve
          patch.object(handler, "describe_state_machine_details", return_value={"definition": '{"States": {}}', "status": "ACTIVE"}), \
          patch.object(handler, "scan_definition_json", return_value=["Lambda: my_fn"]), \
          patch.object(handler, "detect_trigger", return_value="Schedule detected: rate(1 day) (EventBridge rule r1)"), \
+         patch.object(handler, "get_state_machine_tags", return_value={}), \
          patch.object(handler, "put_pipeline_status", side_effect=lambda table, item: written.append(item)):
         result = handler.lambda_handler({}, None)
 
@@ -335,6 +406,7 @@ def test_one_bad_discovered_machine_does_not_stop_the_others():
          patch.object(handler, "collect_pipeline_state", side_effect=fake_collect), \
          patch.object(handler, "describe_state_machine_details", return_value=None), \
          patch.object(handler, "detect_trigger", return_value="Trigger not identified"), \
+         patch.object(handler, "get_state_machine_tags", return_value={}), \
          patch.object(handler, "put_pipeline_status", side_effect=lambda table, item: written.append(item)):
         result = handler.lambda_handler({}, None)
 

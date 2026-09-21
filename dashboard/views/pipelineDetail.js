@@ -42,7 +42,9 @@
       <div class="section">
         <h3>Configuration</h3>
         <div class="kv-grid">
-          <div><div class="k">Environment</div><div class="v">${p.environment === "unregistered" ? "Not specified" : Utils.dash(p.environment)}</div></div>
+          <div><div class="k">Environment</div><div class="v">${p.environment
+            ? Utils.escapeHtml(p.environment)
+            : `Not automatically detected<div class="footer-note" style="margin-top:4px">${Utils.escapeHtml(p.environment_reason || "No environment could be automatically determined for this pipeline.")}</div>`}</div></div>
           <div><div class="k">Region</div><div class="v">${Utils.dash(p.region)}</div></div>
           <div><div class="k">Owner</div><div class="v">${Utils.notAssigned(p.owner)}</div></div>
           <div><div class="k">Contact</div><div class="v">${Utils.notAssigned(p.contact)}</div></div>

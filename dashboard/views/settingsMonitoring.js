@@ -13,7 +13,7 @@ Views.settingsMonitoring = async function (container) {
     : pipelines.map((p) => `
         <tr>
           <td class="pname">${Utils.escapeHtml(p.pipeline_name)}</td>
-          <td class="nowrap">${Utils.envBadge(p.environment)}</td>
+          <td class="nowrap">${Utils.envBadge(p)}</td>
           <td class="nowrap"><span class="badge badge-enabled">Enabled</span></td>
           <td class="nowrap">${p.alerting_enabled ? '<span class="badge badge-enabled">Enabled</span>' : '<span class="badge badge-disabled">Disabled</span>'}</td>
           <td class="nowrap">${Utils.reviewStatusLabel(p)}</td>

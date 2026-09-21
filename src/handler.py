@@ -43,7 +43,7 @@ from typing import Dict, Optional
 from .application_handler import run_application_discovery
 from .collector import collect_pipeline_state
 from .data_freshness import DataFreshnessStatus, evaluate_data_freshness
-from .discovery import describe_state_machine_details, list_all_state_machines
+from .discovery import describe_state_machine_details, get_state_machine_tags, list_all_state_machines
 from .freshness import evaluate_freshness
 from .lineage_handler import run_lineage_discovery
 from .models import ExecutionStatus, PipelineConfig, ScheduleConfig
@@ -93,18 +93,60 @@ def _execution_dict(execution) -> dict:
     }
 
 
-def _synthetic_pipeline(name: str, arn: str, region: str) -> PipelineConfig:
+# Tag keys checked for a deployment environment, in order. Real AWS tag
+# keys are case-sensitive, and this account has no established convention -
+# see _detect_environment's docstring - so every common capitalization is
+# checked explicitly rather than guessed at from one.
+_ENVIRONMENT_TAG_KEYS = ["Environment", "environment", "Env", "env", "Stage", "stage"]
+
+_ENVIRONMENT_TAGS_CHECKED_LABEL = ", ".join(_ENVIRONMENT_TAG_KEYS)
+
+
+def _detect_environment(tags: Dict[str, str]) -> "tuple[Optional[str], Optional[str]]":
+    """Real, general tag-based environment detection - not hardcoded to "no
+    environment tag exists," so this correctly picks one up automatically if
+    this account (or a future one) ever adopts one. As of this account's own
+    live data, none of the 28 discovered state machines carry an
+    Environment/Env/Stage tag - only CloudFormation's own stack-id/
+    stack-name/logical-id tags and a stateMachine:createdBy=SAM tooling
+    marker exist, on 18 of 28; the other 10 have no tags at all. Returns
+    (environment, reason) - reason is always None when environment was
+    found, and always a specific explanation when it wasn't.
+    """
+    for key in _ENVIRONMENT_TAG_KEYS:
+        value = tags.get(key)
+        if value:
+            return value, None
+
+    if tags:
+        found = ", ".join(sorted(tags.keys()))
+        reason = (
+            f"No Environment/Env/Stage tag found on this AWS resource. "
+            f"Checked tag keys: {_ENVIRONMENT_TAGS_CHECKED_LABEL}. "
+            f"Tags actually present: {found}."
+        )
+    else:
+        reason = (
+            f"No Environment/Env/Stage tag found on this AWS resource - "
+            f"it has no tags at all. Checked tag keys: {_ENVIRONMENT_TAGS_CHECKED_LABEL}."
+        )
+    return None, reason
+
+
+def _synthetic_pipeline(name: str, arn: str, region: str, environment: Optional[str], environment_reason: Optional[str]) -> PipelineConfig:
     """Stand-in PipelineConfig for a state machine with no enabled
     registry.yaml entry. Every field here is an honest placeholder, never a
     guess: no schedule/output/owner is invented, so evaluate_freshness/
     evaluate_data_freshness correctly report UNKNOWN/NOT_CONFIGURED instead
-    of a fabricated status.
+    of a fabricated status. `environment`/`environment_reason` come from
+    _detect_environment(), computed by the caller from this pipeline's real
+    AWS tags - never invented here.
     """
     return PipelineConfig(
         name=name,
         state_machine_arn=arn,
         region=region,
-        environment="unregistered",
+        environment=environment,
         monitoring_enabled=True,
         alerting_enabled=False,
         owner=None,
@@ -113,6 +155,7 @@ def _synthetic_pipeline(name: str, arn: str, region: str) -> PipelineConfig:
         output=None,
         review_status="needs_review",
         contact=None,
+        environment_reason=environment_reason,
     )
 
 
@@ -120,6 +163,7 @@ def _build_item(pipeline, source, state, exec_result, data_result, now) -> dict:
     return {
         "pipeline_name": pipeline.name,
         "environment": pipeline.environment,
+        "environment_reason": pipeline.environment_reason,
         "region": pipeline.region,
         "state_machine_arn": pipeline.state_machine_arn,
         "owner": pipeline.owner,
@@ -171,6 +215,7 @@ def _build_error_item(pipeline, source, error: str, now) -> dict:
     return {
         "pipeline_name": pipeline.name,
         "environment": pipeline.environment,
+        "environment_reason": pipeline.environment_reason,
         "region": pipeline.region,
         "state_machine_arn": pipeline.state_machine_arn,
         "owner": pipeline.owner,
@@ -228,7 +273,9 @@ def _process_machine(machine: dict, registry_entry: Optional[PipelineConfig], no
         pipeline = registry_entry
         source = "registry"
     else:
-        pipeline = _synthetic_pipeline(machine["name"], arn, region)
+        tags = get_state_machine_tags(arn, region)
+        environment, environment_reason = _detect_environment(tags)
+        pipeline = _synthetic_pipeline(machine["name"], arn, region, environment, environment_reason)
         source = "discovered"
 
     state = collect_pipeline_state(pipeline)
@@ -342,7 +389,17 @@ def lambda_handler(event, context):
             results["from_registry" if registry_entry is not None else "from_discovery"] += 1
         except Exception as exc:
             logger.exception("unexpected error processing pipeline=%s", name)
-            pipeline = registry_entry if registry_entry is not None else _synthetic_pipeline(name, arn, DISCOVERY_REGION)
+            if registry_entry is not None:
+                pipeline = registry_entry
+            else:
+                # No extra AWS call here (e.g. a tags lookup) - this path
+                # already means something failed for this pipeline this run,
+                # and piling on another AWS call that could itself fail
+                # isn't worth it just to populate one field on an error item.
+                pipeline = _synthetic_pipeline(
+                    name, arn, DISCOVERY_REGION, None,
+                    "Environment could not be checked - the monitor hit an unexpected error while processing this pipeline this run.",
+                )
             source = "registry" if registry_entry is not None else "discovered"
             try:
                 put_pipeline_status(TABLE_NAME, _build_error_item(pipeline, source, str(exc), now))

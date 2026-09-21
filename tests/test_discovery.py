@@ -83,3 +83,37 @@ def test_describe_state_machine_details_returns_definition_and_status():
     details = discovery.describe_state_machine_details("arn:a", REGION)
 
     assert details == {"definition": '{"States": {}}', "status": "ACTIVE"}
+
+
+def test_get_state_machine_tags_returns_key_value_dict():
+    client, stubber = _stub_client()
+    stubber.add_response(
+        "list_tags_for_resource",
+        {"tags": [{"key": "Environment", "value": "prod"}, {"key": "aws:cloudformation:stack-name", "value": "data-exporter"}]},
+        {"resourceArn": "arn:a"},
+    )
+    stubber.activate()
+
+    tags = discovery.get_state_machine_tags("arn:a", REGION)
+
+    assert tags == {"Environment": "prod", "aws:cloudformation:stack-name": "data-exporter"}
+
+
+def test_get_state_machine_tags_returns_empty_dict_when_untagged():
+    client, stubber = _stub_client()
+    stubber.add_response("list_tags_for_resource", {"tags": []}, {"resourceArn": "arn:a"})
+    stubber.activate()
+
+    tags = discovery.get_state_machine_tags("arn:a", REGION)
+
+    assert tags == {}
+
+
+def test_get_state_machine_tags_returns_empty_dict_on_aws_failure():
+    client, stubber = _stub_client()
+    stubber.add_client_error("list_tags_for_resource", service_error_code="StateMachineDoesNotExist")
+    stubber.activate()
+
+    tags = discovery.get_state_machine_tags("arn:missing", REGION)
+
+    assert tags == {}
