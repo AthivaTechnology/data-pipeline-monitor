@@ -5,6 +5,7 @@ from src import handler
 from src.models import (
     ExecutionStatus,
     ExecutionSummary,
+    OutputConfig,
     PipelineConfig,
     PipelineExecutionState,
     ScheduleConfig,
@@ -109,6 +110,59 @@ def test_happy_path_writes_one_item_per_registry_pipeline():
     assert item["schedule_type"] == "hourly"
     assert item["grace_period_minutes"] == 15
     assert item["created_at"] == NOW.isoformat()
+
+
+# ---------------- Data freshness is independent of execution health ----------------
+# The dashboard no longer shows a Data Freshness column, but the backend
+# capability (S3 output check -> data_status) is kept for pipelines that do
+# get an output location. These pin that it still runs, and that its result
+# can never change execution_status - which is what every summary card and
+# Healthy/Failed/Delayed/Stale decision is based on.
+
+
+def _fresh_run_with_s3_output():
+    pipeline = _pipeline(output=OutputConfig(type="s3", bucket="exports", key="daily/latest.csv"))
+    success = ExecutionSummary(
+        execution_arn=ARN + ":e1", name="e1", status=ExecutionStatus.SUCCEEDED, start_date=NOW, stop_date=NOW
+    )
+    state = PipelineExecutionState(pipeline=pipeline, latest_execution=success, latest_successful_execution=success)
+    return pipeline, state
+
+
+def test_stale_data_output_does_not_change_execution_health():
+    pipeline, state = _fresh_run_with_s3_output()
+    written = []
+    with patch.object(handler, "TABLE_NAME", "test-table"), \
+         patch.object(handler, "load_registry", return_value=[pipeline]), \
+         patch.object(handler, "load_excluded_names", return_value=set()), \
+         patch.object(handler, "list_all_state_machines", return_value=[_machine("test_pipeline", ARN)]), \
+         patch.object(handler, "collect_pipeline_state", return_value=state), \
+         patch.object(handler, "get_last_modified", return_value=(NOW - timedelta(days=3), None)) as mock_s3, \
+         patch.object(handler, "put_pipeline_status", side_effect=lambda table, item: written.append(item)):
+        handler.lambda_handler({}, None)
+
+    item = written[0]
+    mock_s3.assert_called_once()  # the S3 checker still runs when an output exists
+    assert item["data_status"] == "stale"
+    assert item["data_checked_location"] == "s3://exports/daily/latest.csv"
+    assert item["execution_status"] == "fresh"
+
+
+def test_unreadable_data_output_does_not_change_execution_health():
+    pipeline, state = _fresh_run_with_s3_output()
+    written = []
+    with patch.object(handler, "TABLE_NAME", "test-table"), \
+         patch.object(handler, "load_registry", return_value=[pipeline]), \
+         patch.object(handler, "load_excluded_names", return_value=set()), \
+         patch.object(handler, "list_all_state_machines", return_value=[_machine("test_pipeline", ARN)]), \
+         patch.object(handler, "collect_pipeline_state", return_value=state), \
+         patch.object(handler, "get_last_modified", return_value=(None, "AccessDenied")), \
+         patch.object(handler, "put_pipeline_status", side_effect=lambda table, item: written.append(item)):
+        handler.lambda_handler({}, None)
+
+    item = written[0]
+    assert item["data_status"] == "unknown"
+    assert item["execution_status"] == "fresh"
 
 
 def test_unexpected_exception_still_writes_an_unknown_item():

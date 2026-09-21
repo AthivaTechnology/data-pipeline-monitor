@@ -67,6 +67,25 @@ def test_every_pipeline_lands_in_exactly_one_summary_card():
     assert body["summary"]["fresh"] == 2
 
 
+def test_summary_cards_ignore_data_freshness_entirely():
+    # A pipeline's card is decided by execution_status alone - a stale,
+    # unreadable, or unsupported data output must never move it.
+    items = [
+        {"pipeline_name": "a", "execution_status": "fresh", "data_status": "stale"},
+        {"pipeline_name": "b", "execution_status": "fresh", "data_status": "source_detected_unavailable"},
+        {"pipeline_name": "c", "execution_status": "failed", "data_status": "fresh"},
+    ]
+    with patch.object(api_handler, "TABLE_NAME", "test-table"), \
+         patch.object(api_handler, "get_all_statuses", return_value=items):
+        response = api_handler.lambda_handler({"pathParameters": None}, None)
+
+    import json
+    body = json.loads(response["body"])
+    assert body["summary"]["fresh"] == 2
+    assert body["summary"]["failed"] == 1
+    assert body["summary"]["stale"] == 0
+
+
 def test_pipeline_with_no_execution_status_counts_as_status_unavailable():
     # An item missing execution_status entirely must still land in a card
     # (the "Status Unavailable" one), never vanish from the strip.
