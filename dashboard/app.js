@@ -162,6 +162,15 @@ const Utils = {
     return Utils.dash(p.review_status);
   },
 
+  // Same pattern as envBadge: a missing next-run always needs its reason
+  // shown too, computed from the real AWS schedule expression when one
+  // exists - see src/schedule_parser.py.
+  nextRunLabel(p) {
+    if (p.expected_next_run) return Utils.fmtTime(p.expected_next_run);
+    const reason = p.next_run_reason || "No schedule is known for this pipeline yet.";
+    return `<span title="${Utils.escapeHtml(reason)}">Not scheduled</span>`;
+  },
+
   // Takes the whole pipeline object (not just the env string) because a
   // missing environment always needs its accompanying reason shown too -
   // see handler.py's _detect_environment, which computes both together.

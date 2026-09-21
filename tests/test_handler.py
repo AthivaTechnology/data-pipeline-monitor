@@ -297,7 +297,7 @@ def test_new_machine_with_no_registry_entry_writes_needs_review_item():
          patch.object(handler, "list_all_state_machines", return_value=[_machine("mystery_pipeline", DISCOVERED_ARN)]), \
          patch.object(handler, "collect_pipeline_state", side_effect=_never_run_state), \
          patch.object(handler, "describe_state_machine_details", return_value=None), \
-         patch.object(handler, "detect_trigger", return_value="Trigger not identified"), \
+         patch.object(handler, "detect_trigger_detail", return_value=None), \
          patch.object(handler, "get_state_machine_tags", return_value={}), \
          patch.object(handler, "put_pipeline_status", side_effect=lambda table, item: written.append(item)):
         result = handler.lambda_handler({}, None)
@@ -317,6 +317,8 @@ def test_new_machine_with_no_registry_entry_writes_needs_review_item():
     assert item["detected_resources"] == []
     assert item["created_at"] == NOW.isoformat()
     assert item["state_machine_status"] is None
+    assert item["expected_next_run"] is None
+    assert "No trigger was identified" in item["next_run_reason"]
 
 
 def test_discovered_machine_uses_real_environment_tag_when_present():
@@ -327,7 +329,7 @@ def test_discovered_machine_uses_real_environment_tag_when_present():
          patch.object(handler, "list_all_state_machines", return_value=[_machine("mystery_pipeline", DISCOVERED_ARN)]), \
          patch.object(handler, "collect_pipeline_state", side_effect=_never_run_state), \
          patch.object(handler, "describe_state_machine_details", return_value=None), \
-         patch.object(handler, "detect_trigger", return_value="Trigger not identified"), \
+         patch.object(handler, "detect_trigger_detail", return_value=None), \
          patch.object(handler, "get_state_machine_tags", return_value={"Environment": "prod"}), \
          patch.object(handler, "put_pipeline_status", side_effect=lambda table, item: written.append(item)):
         handler.lambda_handler({}, None)
@@ -345,7 +347,7 @@ def test_discovered_machine_with_unrelated_tags_names_them_in_the_reason():
          patch.object(handler, "list_all_state_machines", return_value=[_machine("mystery_pipeline", DISCOVERED_ARN)]), \
          patch.object(handler, "collect_pipeline_state", side_effect=_never_run_state), \
          patch.object(handler, "describe_state_machine_details", return_value=None), \
-         patch.object(handler, "detect_trigger", return_value="Trigger not identified"), \
+         patch.object(handler, "detect_trigger_detail", return_value=None), \
          patch.object(handler, "get_state_machine_tags", return_value={"aws:cloudformation:stack-name": "data-exporter"}), \
          patch.object(handler, "put_pipeline_status", side_effect=lambda table, item: written.append(item)):
         handler.lambda_handler({}, None)
@@ -372,10 +374,15 @@ def test_discovered_pipeline_reports_detected_resources_when_output_is_unresolve
          patch.object(handler, "collect_pipeline_state", side_effect=_state), \
          patch.object(handler, "describe_state_machine_details", return_value={"definition": '{"States": {}}', "status": "ACTIVE"}), \
          patch.object(handler, "scan_definition_json", return_value=["Lambda: my_fn"]), \
-         patch.object(handler, "detect_trigger", return_value="Schedule detected: rate(1 day) (EventBridge rule r1)"), \
+         patch.object(handler, "detect_trigger_detail", return_value={
+             "kind": "eventbridge", "name": "r1", "resource_id": "arn:aws:events:us-east-1:1:rule/r1",
+             "label": "Schedule detected: rate(1 day) (EventBridge rule r1)", "schedule_expression": "rate(1 day)",
+         }), \
          patch.object(handler, "get_state_machine_tags", return_value={}), \
          patch.object(handler, "put_pipeline_status", side_effect=lambda table, item: written.append(item)):
+        before = datetime.now(timezone.utc)
         result = handler.lambda_handler({}, None)
+        after = datetime.now(timezone.utc)
 
     assert result["from_discovery"] == 1
     item = written[0]
@@ -384,6 +391,15 @@ def test_discovered_pipeline_reports_detected_resources_when_output_is_unresolve
     assert item["data_status"] == "source_detected_unavailable"
     assert "Lambda: my_fn" not in item["data_reason"]
     assert item["state_machine_status"] == "ACTIVE"
+    # The real point of this test: a detected rate() schedule now produces
+    # a computed Next Run, even though execution_status stayed "unknown"
+    # (freshness classification is untouched - see schedule_parser.py).
+    # handler.py's own `now` isn't injectable, so bracket it between two
+    # real clock reads taken immediately around the call, rather than
+    # asserting an exact timestamp.
+    next_run = datetime.fromisoformat(item["expected_next_run"])
+    assert before + timedelta(days=1) <= next_run <= after + timedelta(days=1)
+    assert item["next_run_reason"] is None
 
 
 def test_one_bad_discovered_machine_does_not_stop_the_others():
@@ -405,7 +421,7 @@ def test_one_bad_discovered_machine_does_not_stop_the_others():
          ), \
          patch.object(handler, "collect_pipeline_state", side_effect=fake_collect), \
          patch.object(handler, "describe_state_machine_details", return_value=None), \
-         patch.object(handler, "detect_trigger", return_value="Trigger not identified"), \
+         patch.object(handler, "detect_trigger_detail", return_value=None), \
          patch.object(handler, "get_state_machine_tags", return_value={}), \
          patch.object(handler, "put_pipeline_status", side_effect=lambda table, item: written.append(item)):
         result = handler.lambda_handler({}, None)

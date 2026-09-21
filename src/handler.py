@@ -50,8 +50,9 @@ from .models import ExecutionStatus, PipelineConfig, ScheduleConfig
 from .registry import load_excluded_names, load_registry
 from .resource_scanner import scan_definition_json
 from .s3_checker import get_last_modified
+from .schedule_parser import compute_next_run
 from .status_store import put_pipeline_status
-from .trigger_scanner import detect_trigger
+from .trigger_scanner import detect_trigger_detail
 
 # NOTE: logging.basicConfig() is a no-op here - AWS Lambda's Python runtime
 # always attaches a root handler before our code runs, and basicConfig()
@@ -191,6 +192,11 @@ def _build_item(pipeline, source, state, exec_result, data_result, now) -> dict:
             else None
         ),
         "expected_next_run": _iso(exec_result.expected_next_run),
+        # None here means "not applicable" (registry-backed, or a discovered
+        # pipeline where expected_next_run above was already set) - only
+        # ever a real explanation string for a discovered pipeline whose
+        # next run genuinely couldn't be computed. See _process_machine.
+        "next_run_reason": None,
         "stale_deadline": _iso(exec_result.stale_deadline),
         "recent_executions": [_execution_dict(e) for e in state.recent_executions],
         "data_status": data_result.status.value,
@@ -234,6 +240,7 @@ def _build_error_item(pipeline, source, error: str, now) -> dict:
         "last_execution_duration_seconds": None,
         "last_successful_execution_at": None,
         "expected_next_run": None,
+        "next_run_reason": "Not evaluated because the monitor failed before reaching the schedule check.",
         "stale_deadline": None,
         "recent_executions": [],
         "data_status": "unknown",
@@ -299,12 +306,26 @@ def _process_machine(machine: dict, registry_entry: Optional[PipelineConfig], no
         details = describe_state_machine_details(arn, region)
         definition = details.get("definition") if details else None
         resources = scan_definition_json(definition) if definition else []
-        trigger_label = detect_trigger(arn, region)
+        trigger_detail = detect_trigger_detail(arn, region)
+        trigger_label = trigger_detail["label"] if trigger_detail else "Trigger not identified"
 
         item["discovery_reason"] = "Auto-discovered via states:ListStateMachines; not present in config/registry.yaml"
         item["detected_trigger"] = trigger_label
         item["detected_resources"] = resources
         item["state_machine_status"] = details.get("status") if details else None
+
+        # Next Run, computed independently of evaluate_freshness() above -
+        # that function never gets here for a discovered pipeline (it always
+        # needs a real, human-set grace_period_minutes first, which is never
+        # guessed - see models.py). This is a separate, honest "when will
+        # this next fire" answer from the real AWS schedule expression, not
+        # a second freshness judgment - execution health is untouched.
+        schedule_expression = trigger_detail.get("schedule_expression") if trigger_detail else None
+        next_run, next_run_reason = compute_next_run(schedule_expression, now)
+        if item["expected_next_run"] is None and next_run is not None:
+            item["expected_next_run"] = _iso(next_run)
+        if next_run is None:
+            item["next_run_reason"] = next_run_reason
 
         # Refine the one UNKNOWN case evaluate_freshness can reach for this
         # synthetic config (schedule.type="custom" with no interval, after a

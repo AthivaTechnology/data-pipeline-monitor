@@ -69,6 +69,7 @@ def _check_eventbridge_rules(state_machine_arn: str, region: str) -> Optional[di
                 "kind": "eventbridge", "name": rule_name,
                 "resource_id": rule.get("Arn") or f"eventbridge-rule:{rule_name}",
                 "label": f"Schedule detected: {schedule_expr} (EventBridge rule {rule_name})",
+                "schedule_expression": schedule_expr,
             }
         if rule.get("EventPattern"):
             return {
@@ -111,6 +112,7 @@ def _check_eventbridge_scheduler(state_machine_arn: str, region: str) -> Optiona
                 "kind": "eventbridge", "name": name,
                 "resource_id": detail.get("Arn") or f"eventbridge-schedule:{name}",
                 "label": f"Schedule detected: {expr} (EventBridge Scheduler {name})",
+                "schedule_expression": expr,
             }
 
     return None

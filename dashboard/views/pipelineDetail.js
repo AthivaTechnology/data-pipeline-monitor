@@ -75,7 +75,9 @@
           <div><div class="k">Last Successful Execution</div><div class="v">${Utils.fmtTime(p.last_successful_execution_at, "No successful run yet")}</div></div>
           <div><div class="k">Last Execution</div><div class="v">${(p.last_execution_status || p.last_execution_at) ? `${Utils.dash(p.last_execution_status)} — ${Utils.fmtTime(p.last_execution_at)}` : "No execution yet"}</div></div>
           <div><div class="k">Last Execution Duration</div><div class="v">${Utils.fmtDuration(p.last_execution_duration_seconds, "Not available")}</div></div>
-          <div><div class="k">Expected Next Run</div><div class="v">${Utils.fmtTime(p.expected_next_run, "Not scheduled")}</div></div>
+          <div><div class="k">Expected Next Run</div><div class="v">${p.expected_next_run
+            ? Utils.fmtTime(p.expected_next_run)
+            : `Not scheduled<div class="footer-note" style="margin-top:4px">${Utils.escapeHtml(p.next_run_reason || "No schedule is known for this pipeline yet.")}</div>`}</div></div>
         </div>
       </div>
 

@@ -293,7 +293,7 @@
         <td>${Utils.badge(p.execution_status, EXEC_META)}<div class="reason" title="${Utils.escapeHtml(p.execution_reason || "")}">${p.execution_reason || ""}</div></td>
         <td>${Utils.badge(p.data_status, DATA_META)}<div class="reason" title="${Utils.escapeHtml(p.data_reason || "")}">${p.data_reason || ""}</div></td>
         <td class="nowrap">${Utils.fmtTime(p.last_successful_execution_at, "No successful run yet")}</td>
-        <td class="nowrap">${Utils.fmtTime(p.expected_next_run, "Not scheduled")}</td>
+        <td class="nowrap">${Utils.nextRunLabel(p)}</td>
         <td class="nowrap">${Utils.fmtDuration(p.last_execution_duration_seconds, "Not available")}</td>
         <td class="nowrap">${Utils.escapeHtml(Utils.scheduleLabel(p))}</td>
         <td class="nowrap"><button class="view-btn" onclick="event.stopPropagation(); location.hash='#/pipeline-monitor/${encodeURIComponent(p.pipeline_name)}'">View</button></td>

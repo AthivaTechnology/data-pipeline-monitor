@@ -125,6 +125,46 @@ def test_detect_trigger_detail_returns_structured_payload_for_lineage():
     assert detail["name"] == "my-rule"
     assert detail["resource_id"] == "arn:aws:events:us-east-1:1:rule/my-rule"
     assert "Schedule detected: rate(1 day)" in detail["label"]
+    assert detail["schedule_expression"] == "rate(1 day)"
+
+
+def test_detect_trigger_detail_includes_schedule_expression_from_scheduler():
+    events_stubber = _stub_events()
+    events_stubber.add_response("list_rule_names_by_target", {"RuleNames": []})
+    events_stubber.activate()
+
+    scheduler_stubber = _stub_scheduler()
+    scheduler_stubber.add_response("list_schedules", {"Schedules": [{"Name": "my-schedule", "Arn": "arn:sched"}]})
+    scheduler_stubber.add_response(
+        "get_schedule",
+        {
+            "Name": "my-schedule",
+            "ScheduleExpression": "cron(0 6 * * ? *)",
+            "State": "ENABLED",
+            "Target": {"Arn": ARN, "RoleArn": "arn:aws:iam::382625484581:role/scheduler-role"},
+        },
+    )
+    scheduler_stubber.activate()
+
+    detail = trigger_scanner.detect_trigger_detail(ARN, REGION)
+
+    assert detail["schedule_expression"] == "cron(0 6 * * ? *)"
+
+
+def test_detect_trigger_detail_has_no_schedule_expression_for_event_pattern_rule():
+    # An event-triggered rule (not a schedule) genuinely has no expression -
+    # the key must be absent/None, never a guessed value.
+    events_stubber = _stub_events()
+    events_stubber.add_response("list_rule_names_by_target", {"RuleNames": ["my-rule"]})
+    events_stubber.add_response(
+        "describe_rule",
+        {"Name": "my-rule", "Arn": "arn:rule", "State": "ENABLED", "EventPattern": '{"source": ["aws.s3"]}'},
+    )
+    events_stubber.activate()
+
+    detail = trigger_scanner.detect_trigger_detail(ARN, REGION)
+
+    assert detail.get("schedule_expression") is None
 
 
 def test_detect_trigger_detail_returns_none_when_nothing_found():
