@@ -83,7 +83,6 @@
         <div class="pm-main">
           <div class="controls-row">
             <input type="text" id="pm-search" placeholder="Search pipeline name…" />
-            <select id="pm-env-filter"><option value="">All environments</option></select>
             <select id="pm-status-filter">
               <option value="">All statuses</option>
               ${Object.entries(EXEC_META).map(([k, m]) => `<option value="${k}">${m.label}</option>`).join("")}
@@ -115,7 +114,6 @@
 
     document.getElementById("pm-refresh-btn").addEventListener("click", () => loadData(true));
     document.getElementById("pm-search").addEventListener("input", renderContent);
-    document.getElementById("pm-env-filter").addEventListener("change", renderContent);
     document.getElementById("pm-status-filter").addEventListener("change", renderContent);
 
     // Deep-link support: Home's stat links navigate to
@@ -150,7 +148,6 @@
       const data = await Api.fetchStatus();
       allPipelines = data.pipelines;
       lastSummary = data.summary;
-      populateEnvFilter();
       renderContent();
       renderSidePanels();
       const lu = document.getElementById("pm-last-updated");
@@ -164,28 +161,9 @@
     }
   }
 
-  // Sentinel for the env filter's "Not automatically detected" option -
-  // distinct from "" (All environments), since a real environment value can
-  // never equal this (environment is either a real AWS-derived string or
-  // null, never this literal).
-  const _ENV_NOT_DETECTED = "__env_not_detected__";
-
-  function populateEnvFilter() {
-    const select = document.getElementById("pm-env-filter");
-    if (!select) return;
-    const current = select.value;
-    const envs = Array.from(new Set(allPipelines.map((p) => p.environment).filter(Boolean))).sort();
-    const hasUndetected = allPipelines.some((p) => !p.environment);
-    select.innerHTML = `<option value="">All environments</option>` +
-      envs.map((e) => `<option value="${Utils.escapeHtml(e)}">${Utils.escapeHtml(e)}</option>`).join("") +
-      (hasUndetected ? `<option value="${_ENV_NOT_DETECTED}">Not automatically detected</option>` : "");
-    select.value = (envs.includes(current) || current === _ENV_NOT_DETECTED) ? current : "";
-  }
-
   function getFilters() {
     return {
       search: (document.getElementById("pm-search")?.value || "").trim().toLowerCase(),
-      env: document.getElementById("pm-env-filter")?.value || "",
       status: document.getElementById("pm-status-filter")?.value || "",
     };
   }
@@ -194,8 +172,6 @@
     const f = getFilters();
     return allPipelines.filter((p) => {
       if (f.search && !p.pipeline_name.toLowerCase().includes(f.search)) return false;
-      if (f.env === _ENV_NOT_DETECTED && p.environment) return false;
-      if (f.env && f.env !== _ENV_NOT_DETECTED && p.environment !== f.env) return false;
       if (f.status && p.execution_status !== f.status) return false;
       return true;
     });
@@ -212,7 +188,6 @@
 
   function clearFilters() {
     document.getElementById("pm-search").value = "";
-    document.getElementById("pm-env-filter").value = "";
     document.getElementById("pm-status-filter").value = "";
     renderContent();
   }
@@ -253,7 +228,6 @@
       const def = CARD_DEFS.find((d) => d.statusValue === f.status);
       parts.push(`Status: ${def ? def.label : f.status}`);
     }
-    if (f.env) parts.push(`Environment: ${f.env === _ENV_NOT_DETECTED ? "Not automatically detected" : Utils.escapeHtml(f.env)}`);
     if (f.search) parts.push(`Search: "${Utils.escapeHtml(f.search)}"`);
 
     if (parts.length === 0) {
@@ -265,52 +239,6 @@
         Showing: ${parts.join(" · ")}
         <button title="Clear filters" onclick="Views._pipelineMonitorClearFilters()">✕</button>
       </div>`;
-  }
-
-  // What kind of trigger discovery found, read off the label trigger_scanner
-  // already produces. A registry-backed pipeline carries a human-set schedule.
-  function triggerKind(p) {
-    const t = p.detected_trigger || "";
-    if (t.startsWith("Schedule detected")) return "schedule";
-    if (t.startsWith("Event triggered")) return "event";
-    if (p.source === "registry") return "schedule";
-    return "none";
-  }
-
-  // One concrete next step per row, derived only from fields the API
-  // already returns (execution_status, the reason text's collector-error
-  // prefix, last_execution_status, and the detected trigger) - never a
-  // guess, and never "go edit registry.yaml".
-  function recommendedAction(p) {
-    const trigger = triggerKind(p);
-    switch (p.execution_status) {
-      case "fresh":
-        return "None - ran on schedule.";
-      case "running":
-        return "None - currently running.";
-      case "delayed":
-        return "Watch - overdue, but still within its grace period.";
-      case "stale":
-        return "Check the trigger and recent runs - no successful run in the expected window.";
-      case "failed":
-        return "Open the pipeline, review the last run's error, fix the cause, and re-run.";
-      case "never_run":
-        if (trigger === "schedule") return "Check its schedule is enabled and allowed to start this state machine - it's scheduled but has never run.";
-        if (trigger === "event") return "None unless you expected a run - it starts only on its EventBridge event, which hasn't fired yet.";
-        return "Confirm it's still in use - it has never run and nothing in AWS was found that triggers it.";
-      case "unknown":
-        if (/^(monitor failed to collect|unexpected monitor error)/i.test(p.execution_reason || "")) {
-          return "Check the monitor's AWS access to this state machine - its execution history couldn't be read.";
-        }
-        if (p.last_execution_status === "SUCCEEDED") {
-          return trigger === "none"
-            ? "None needed - last run succeeded. On-time vs. late can't be judged: no schedule was found in AWS."
-            : "None needed - last run succeeded. On-time vs. late can't be judged: AWS provides no delay tolerance for this schedule.";
-        }
-        return "Open the pipeline for details - execution health couldn't be determined automatically.";
-      default:
-        return "Open the pipeline for details.";
-    }
   }
 
   function ownerLabel(p) {
@@ -344,7 +272,6 @@
         <td class="nowrap">${Utils.fmtTime(p.last_successful_execution_at, "No successful run yet")}</td>
         <td class="nowrap">${Utils.nextRunLabel(p)}</td>
         <td>${Utils.escapeHtml(Utils.scheduleLabel(p))}</td>
-        <td class="action-cell">${Utils.escapeHtml(recommendedAction(p))}</td>
       </tr>
     `);
 
@@ -353,7 +280,7 @@
         <thead>
           <tr>
             <th>Pipeline</th><th>Environment</th><th>Owner</th><th>Execution Health</th>
-            <th>Last Successful Run</th><th>Next Run</th><th>Trigger</th><th>Recommended Action</th>
+            <th>Last Successful Run</th><th>Next Run</th><th>Trigger</th>
           </tr>
         </thead>
         <tbody>${rows.join("")}</tbody>

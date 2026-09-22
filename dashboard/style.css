@@ -398,8 +398,6 @@ tbody tr.row-failed:hover { background: color-mix(in srgb, var(--failed-bg) 80%,
   color: var(--text-muted); font-size: 11.5px; margin-top: 4px; max-width: 260px; line-height: 1.4;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
-/* Recommended Action is the row's takeaway - shown in full, never clamped. */
-.action-cell { font-size: 12.5px; line-height: 1.45; min-width: 220px; max-width: 320px; }
 .view-btn {
   background: var(--card); border: 1px solid var(--border); border-radius: 7px; padding: 6px 12px;
   font-size: 12px; font-weight: 600; cursor: pointer; color: var(--text); white-space: nowrap;
